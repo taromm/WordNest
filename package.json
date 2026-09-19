@@ -1,0 +1,70 @@
+{
+  "name": "wordnest",
+  "productName": "词栖",
+  "version": "1.0.0",
+  "private": true,
+  "description": "macOS 四册单词本：阅读 / 听力 / 写作 / 口语，带复习提醒与发音播放",
+  "author": "zym",
+  "license": "MIT",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "desktop": "electron .",
+    "build:mac": "node scripts/prepare-mac-build.js && electron-builder --mac dmg zip",
+    "icon": "python3 scripts/generate-icon.py",
+    "check": "node --check electron-main.js && node --check preload.js && node --check src/store.js && node --check src/extract-markers.js && node --check src/ocr.js && node --check src/dictionary.js && node --check public/app.js && node --check public/highlight.js",
+    "verify": "node scripts/verify.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.ciqi.wordnest",
+    "productName": "词栖",
+    "executableName": "Wordnest",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/tesseract.js/**/*",
+      "node_modules/tesseract.js-core/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron-main.js",
+      "preload.js",
+      "src/**/*",
+      "public/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.education",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSUserNotificationsUsageDescription": "用于在单词到期时提醒你复习。"
+      },
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "Wordnest-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Wordnest-${version}-mac-${arch}.${ext}"
+    }
+  }
+}

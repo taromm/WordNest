@@ -1,0 +1,1550 @@
+'use strict';
+
+const BOOKS = [
+  { id: 'reading', name: '阅读', en: 'Reading', hint: '篇章里遇见的词', speak: false, color: 'reading' },
+  { id: 'listening', name: '听力', en: 'Listening', hint: '耳朵先认识的词', speak: true, color: 'listening' },
+  { id: 'writing', name: '写作', en: 'Writing', hint: '落笔要用准的词', speak: false, color: 'writing' },
+  { id: 'speaking', name: '口语', en: 'Speaking', hint: '说出口的词', speak: true, color: 'speaking' },
+];
+
+const ui = {
+  nav: document.getElementById('book-nav'),
+  title: document.getElementById('book-title'),
+  en: document.getElementById('book-en'),
+  hint: document.getElementById('book-hint'),
+  stats: document.getElementById('book-stats'),
+  list: document.getElementById('word-list'),
+  search: document.getElementById('search'),
+  overlay: document.getElementById('overlay'),
+  speakAll: document.getElementById('btn-speak-all'),
+  dictation: document.getElementById('btn-dictation'),
+  exam: document.getElementById('btn-exam'),
+  dataHint: document.getElementById('data-hint'),
+};
+
+function emptyRendererState() {
+  return {
+    version: 1,
+    settings: {
+      reminderEnabled: true,
+      reminderMinutes: 90,
+      ttsRate: 0.92,
+      ttsRepeat: 1,
+      ttsGapMs: 900,
+      launchAtLogin: false,
+      lastNotifiedAt: null,
+      highlightColor: 'auto',
+      scanMode: 'highlight',
+      ieltsExamAt: '',
+      savedTags: [],
+    },
+    books: {
+      reading: { words: [] },
+      listening: { words: [] },
+      writing: { words: [] },
+      speaking: { words: [] },
+    },
+  };
+}
+
+const state = {
+  bookId: 'reading',
+  data: emptyRendererState(),
+  query: '',
+  tagFilter: '',
+  speaking: false,
+};
+
+const COLOR_LABELS = {
+  auto: '橙色 / 黄 / 绿荧光笔',
+  orange: '橙色荧光笔',
+  yellow: '黄色荧光笔',
+  green: '绿色荧光笔',
+  pink: '粉色荧光笔',
+};
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"'`]/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '`': '&#96;',
+  })[char]);
+}
+
+function bookMeta(id) {
+  return BOOKS.find(item => item.id === id) || BOOKS[0];
+}
+
+function isDue(word, now) {
+  if (!word || !word.review || word.review.mastered) return false;
+  return Date.parse(word.review.dueAt) <= (now || Date.now());
+}
+
+function dueInBook(bookId) {
+  const words = (((state.data || {}).books || {})[bookId] || {}).words || [];
+  return words.filter(word => isDue(word)).length;
+}
+
+function createLocalApi() {
+  const key = 'wordnest-local-v1';
+  const empty = {
+    version: 1,
+    settings: {
+      reminderEnabled: true,
+      reminderMinutes: 90,
+      ttsRate: 0.92,
+      ttsRepeat: 1,
+      ttsGapMs: 900,
+      launchAtLogin: false,
+      lastNotifiedAt: null,
+      highlightColor: 'auto',
+      scanMode: 'highlight',
+      ieltsExamAt: '',
+    },
+    books: {
+      reading: { words: [] },
+      listening: { words: [] },
+      writing: { words: [] },
+      speaking: { words: [] },
+    },
+  };
+
+  function load() {
+    try { return Object.assign(empty, JSON.parse(localStorage.getItem(key) || 'null') || empty); }
+    catch (_) { return empty; }
+  }
+  function save(data) {
+    localStorage.setItem(key, JSON.stringify(data));
+    return data;
+  }
+  function makeWord(item) {
+    const now = new Date().toISOString();
+    return {
+      id: `w_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      text: String(item.text || '').trim(),
+      meaning: item.meaning || '',
+      ieltsMeaning: item.ieltsMeaning || item.meaning || '',
+      otherMeanings: item.otherMeanings || '',
+      phonetic: item.phonetic || '',
+      example: item.example || '',
+      notes: item.notes || '',
+      tags: item.tags || [],
+      source: item.source || 'manual',
+      createdAt: now,
+      updatedAt: now,
+      review: { ease: 2.5, intervalMinutes: 90, repetitions: 0, dueAt: now, lastReviewedAt: null, reviewCount: 0, forgetCount: 0, mastered: false },
+    };
+  }
+
+  return {
+    desktop: false,
+    async getState() { return load(); },
+    async addWords(bookId, words) {
+      const data = load();
+      const added = [];
+      const existing = [];
+      for (const item of words) {
+        const found = data.books[bookId].words.find(word => word.text.toLowerCase() === String(item.text).trim().toLowerCase());
+        if (found) { existing.push(found); continue; }
+        const word = makeWord(item);
+        data.books[bookId].words.unshift(word);
+        added.push(word);
+      }
+      save(data);
+      return { added, existing };
+    },
+    async updateWord(bookId, id, patch) {
+      const data = load();
+      const word = data.books[bookId].words.find(item => item.id === id);
+      Object.assign(word, patch, { updatedAt: new Date().toISOString() });
+      save(data);
+      return word;
+    },
+    async deleteWord(bookId, id) {
+      const data = load();
+      data.books[bookId].words = data.books[bookId].words.filter(item => item.id !== id);
+      return save(data);
+    },
+    async deleteWords(bookId, ids) {
+      const data = load();
+      const remove = new Set((ids || []).map(item => String(item)));
+      data.books[bookId].words = data.books[bookId].words.filter(item => !remove.has(item.id));
+      return save(data);
+    },
+    async reviewWord(bookId, id, rating) {
+      const data = load();
+      const word = data.books[bookId].words.find(item => item.id === id);
+      const now = Date.now();
+      word.review.lastReviewedAt = new Date(now).toISOString();
+      word.review.reviewCount += 1;
+      if (rating === 'again') {
+        word.review.intervalMinutes = 60;
+        word.review.repetitions = 0;
+      } else if (rating === 'hard') {
+        word.review.intervalMinutes = 90;
+      } else {
+        word.review.intervalMinutes = word.review.repetitions ? Math.min(word.review.intervalMinutes * 2.5, 60 * 24 * 30) : 120;
+        word.review.repetitions += 1;
+        word.review.mastered = word.review.intervalMinutes >= 60 * 24 * 7;
+      }
+      word.review.dueAt = new Date(now + word.review.intervalMinutes * 60000).toISOString();
+      save(data);
+      return word;
+    },
+    async updateSettings(patch) {
+      const data = load();
+      Object.assign(data.settings, patch);
+      return save(data);
+    },
+    async exportData() { return { canceled: true }; },
+    async importData() { return { canceled: true }; },
+    async getDataInfo() { return { filePath: '浏览器 localStorage（仅开发预览）', userData: '' }; },
+    async openDataFolder() { return false; },
+    async recognizeImage() { throw new Error('扫描识别需要在 macOS 桌面版中使用'); },
+    async lookupWord(word) {
+      const result = { phonetic: '', ieltsMeaning: '', otherMeanings: '', meaning: '', example: '' };
+      const text = String(word || '').trim();
+      if (!text) return result;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3500);
+      try {
+        const res = await fetch(`https://dict.youdao.com/suggest?num=8&ver=2.0&doctype=json&le=en&q=${encodeURIComponent(text)}`, {
+          headers: { Accept: 'application/json' },
+          signal: ctrl.signal,
+        });
+        if (!res.ok) return result;
+        const data = await res.json();
+        const first = ((((data || {}).data || {}).entries) || []).find(item => item && item.explain);
+        if (!first) return result;
+        const groups = String(first.explain || '').split(/(?=\b(?:n|v|vt|vi|adj|adv|prep|conj)\.\s)/i).map(item => item.trim()).filter(Boolean);
+        result.ieltsMeaning = groups[0] || '';
+        result.otherMeanings = groups.slice(1).join(' ｜ ');
+        result.meaning = [result.ieltsMeaning, result.otherMeanings].filter(Boolean).join('\n');
+      } catch (_) { /* offline */ }
+      clearTimeout(timer);
+      return result;
+    },
+    onStartReview() { return () => {}; },
+  };
+}
+
+const api = window.wordnest || createLocalApi();
+
+async function lookupWord(text) {
+  const word = String(text || '').trim();
+  if (!word) return { phonetic: '', ieltsMeaning: '', otherMeanings: '', meaning: '', example: '' };
+  if (api.lookupWord) return api.lookupWord(word);
+  return { phonetic: '', ieltsMeaning: '', otherMeanings: '', meaning: '', example: '' };
+}
+
+function collectedTags() {
+  const saved = (((state.data || {}).settings || {}).savedTags) || [];
+  const fromWords = [];
+  Object.keys(((state.data || {}).books) || {}).forEach((bookId) => {
+    ((((state.data.books || {})[bookId] || {}).words) || []).forEach((word) => {
+      (word.tags || []).forEach(tag => fromWords.push(tag));
+    });
+  });
+  return Array.from(new Set([].concat(saved, fromWords).filter(Boolean)));
+}
+
+function isEnglishDump(text) {
+  const cn = (String(text).match(/[\u4e00-\u9fff]/g) || []).length;
+  const en = (String(text).match(/[A-Za-z]/g) || []).length;
+  return en >= 12 && cn < 2;
+}
+
+function senseList(word) {
+  const out = [];
+  const ielts = String(word.ieltsMeaning || word.meaning || '').trim();
+  if (ielts) out.push({ label: '雅思常考', text: ielts });
+  String(word.otherMeanings || '')
+    .split(/\s*｜\s*|\n/)
+    .map(item => item.trim())
+    .filter(item => item && !isEnglishDump(item) && !/^\.\.\.$/.test(item))
+    .forEach((text) => out.push({ label: '其他意思', text }));
+  return out;
+}
+
+function meaningHtml(word) {
+  const senses = senseList(word);
+  if (!senses.length) return '<p class="meaning">还没有释义，复习时可以补上。</p>';
+  return senses.map(item => `<p class="meaning ${item.label === '雅思常考' ? 'ielts' : 'other'}"><span class="sense-label">${item.label}</span>${escapeHtml(item.text)}</p>`).join('');
+}
+
+function examplePickerHtml(word) {
+  const senses = senseList(word);
+  if (!senses.length) return '';
+  return `<details class="example-details">
+    <summary>看例句</summary>
+    <p class="example-hint">先点一个意思，再给出例句</p>
+    <div class="sense-picks">${senses.map(item => `<button type="button" class="sense-pick" data-sense="${escapeHtml(item.text)}">${escapeHtml(item.label)}：${escapeHtml(item.text)}</button>`).join('')}</div>
+    <div class="example-out" hidden></div>
+  </details>`;
+}
+
+function bindExamplePanel(root, word) {
+  if (!root) return;
+  root.querySelectorAll('.sense-pick').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const out = root.querySelector('.example-out');
+      if (!out) return;
+      out.hidden = false;
+      out.textContent = '正在找例句…';
+      try {
+        let picked = null;
+        if (api.lookupExamples) {
+          const result = await api.lookupExamples(word.text, btn.dataset.sense);
+          picked = result && result.picked;
+        }
+        if (!picked && word.examples && word.examples[0]) picked = word.examples[0];
+        if (!picked) {
+          out.textContent = '暂时没有找到这个意思的例句。';
+          return;
+        }
+        out.innerHTML = `<p class="ex-en">${escapeHtml(picked.sentence)}</p>${picked.translation ? `<p class="ex-zh">${escapeHtml(picked.translation)}</p>` : ''}`;
+      } catch (err) {
+        out.textContent = err.message || '例句加载失败';
+      }
+    });
+  });
+}
+
+function tagHtml(word) {
+  const tags = word.tags || [];
+  if (!tags.length) return '';
+  return `<p class="tag-line">${tags.map(tag => `<span class="book-tag">${escapeHtml(tag)}</span>`).join('')}</p>`;
+}
+
+function tagOptions(selected) {
+  return collectedTags().map(tag => `<option value="${escapeHtml(tag)}" ${tag === selected ? 'selected' : ''}>${escapeHtml(tag)}</option>`).join('');
+}
+
+function speak(text, onend) {
+  if (!window.speechSynthesis) {
+    if (onend) onend();
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = Number(((state.data && state.data.settings) || {}).ttsRate) || 0.92;
+  const voice = (window.speechSynthesis.getVoices() || []).find(item => /^en(-|_)/i.test(item.lang));
+  if (voice) utter.voice = voice;
+  if (onend) utter.onend = onend;
+  window.speechSynthesis.speak(utter);
+}
+
+let scanPasteHandler = null;
+
+function closeOverlay() {
+  state.speaking = false;
+  scanPasteHandler = null;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  ui.overlay.classList.remove('open');
+  ui.overlay.hidden = true;
+  ui.overlay.setAttribute('hidden', '');
+  ui.overlay.innerHTML = '';
+}
+
+function openOverlay(html) {
+  ui.overlay.innerHTML = html;
+  ui.overlay.hidden = false;
+  ui.overlay.removeAttribute('hidden');
+  ui.overlay.classList.add('open');
+  const close = ui.overlay.querySelector('[data-close]');
+  if (close) close.addEventListener('click', closeOverlay);
+}
+
+function currentWords() {
+  return ((((state.data || {}).books || {})[state.bookId] || {}).words || []);
+}
+
+function bookWordKeys(bookId) {
+  const words = ((((state.data || {}).books || {})[bookId || state.bookId] || {}).words) || [];
+  return new Set(words.map(word => String(word.text || '').trim().toLowerCase()).filter(Boolean));
+}
+
+function filteredWords() {
+  const q = state.query.trim().toLowerCase();
+  const tag = state.tagFilter;
+  const words = currentWords().slice().filter((word) => {
+    if (tag && !(word.tags || []).includes(tag)) return false;
+    if (!q) return true;
+    return `${word.text} ${word.meaning} ${word.ieltsMeaning || ''} ${word.otherMeanings || ''} ${word.notes} ${(word.tags || []).join(' ')}`.toLowerCase().includes(q);
+  });
+  words.sort((a, b) => Number(isDue(b)) - Number(isDue(a)) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  return words;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function parseExamAt(value) {
+  if (!value) return null;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? null : time;
+}
+
+function toDatetimeLocalValue(iso) {
+  const time = parseExamAt(iso);
+  if (time == null) return '';
+  const date = new Date(time);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function fromDatetimeLocalValue(value) {
+  if (!value) return '';
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? '' : new Date(time).toISOString();
+}
+
+function formatExamDate(iso) {
+  const time = parseExamAt(iso);
+  if (time == null) return '';
+  const date = new Date(time);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function examRemaining(target, now) {
+  const ms = target - (now || Date.now());
+  if (ms <= 0) return { overdue: true, days: 0, hours: 0, minutes: 0, seconds: 0 };
+  const total = Math.floor(ms / 1000);
+  return {
+    overdue: false,
+    days: Math.floor(total / 86400),
+    hours: Math.floor((total % 86400) / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds: total % 60,
+  };
+}
+
+let examTimer = null;
+
+function examCardHtml() {
+  const iso = ((state.data.settings || {}).ieltsExamAt) || '';
+  const target = parseExamAt(iso);
+  if (target == null) {
+    return `<span class="exam-kicker">IELTS</span>
+      <strong>雅思考试倒计时</strong>
+      <span class="exam-note">点这里设置考试日期和时间</span>`;
+  }
+  const left = examRemaining(target);
+  if (left.overdue) {
+    return `<span class="exam-kicker">IELTS</span>
+      <strong>考试时间已到</strong>
+      <span class="exam-date">${escapeHtml(formatExamDate(iso))}</span>`;
+  }
+  return `<span class="exam-kicker">IELTS</span>
+    <strong>距离考试</strong>
+    <span class="exam-date">${escapeHtml(formatExamDate(iso))}</span>
+    <div class="exam-units">
+      <span><b>${left.days}</b><small>天</small></span>
+      <span><b>${pad2(left.hours)}</b><small>时</small></span>
+      <span><b>${pad2(left.minutes)}</b><small>分</small></span>
+      <span><b>${pad2(left.seconds)}</b><small>秒</small></span>
+    </div>`;
+}
+
+function examMode(iso) {
+  const target = parseExamAt(iso);
+  if (target == null) return 'empty';
+  return target <= Date.now() ? 'overdue' : 'live';
+}
+
+function renderExamCountdown() {
+  if (!ui.exam) return;
+  const iso = ((state.data.settings || {}).ieltsExamAt) || '';
+  const mode = examMode(iso);
+  ui.exam.classList.toggle('empty', mode === 'empty');
+  ui.exam.classList.toggle('overdue', mode === 'overdue');
+  if (ui.exam.dataset.mode !== mode || ui.exam.dataset.at !== iso) {
+    ui.exam.dataset.mode = mode;
+    ui.exam.dataset.at = iso;
+    ui.exam.innerHTML = examCardHtml();
+    return;
+  }
+  if (mode !== 'live') return;
+  const left = examRemaining(parseExamAt(iso));
+  const nums = ui.exam.querySelectorAll('.exam-units b');
+  if (nums.length === 4) {
+    nums[0].textContent = String(left.days);
+    nums[1].textContent = pad2(left.hours);
+    nums[2].textContent = pad2(left.minutes);
+    nums[3].textContent = pad2(left.seconds);
+  }
+}
+
+function startExamTicker() {
+  if (examTimer) clearInterval(examTimer);
+  renderExamCountdown();
+  examTimer = setInterval(renderExamCountdown, 1000);
+}
+
+async function saveExamAt(iso) {
+  if (!state.data.settings) state.data.settings = {};
+  state.data.settings.ieltsExamAt = iso || '';
+  if (ui.exam) {
+    ui.exam.dataset.mode = '';
+    ui.exam.dataset.at = '';
+  }
+  try { await api.updateSettings({ ieltsExamAt: iso || '' }); } catch (_) { /* preview */ }
+  renderExamCountdown();
+}
+
+function openExamForm() {
+  const iso = ((state.data.settings || {}).ieltsExamAt) || '';
+  openOverlay(`
+    <div class="modal">
+      <h2>雅思考试时间</h2>
+      <p class="help">会显示在左侧四册下面，按天、时、分、秒倒计时。时间按你电脑的本地时区计算。</p>
+      <label class="field"><span>考试日期和时间</span>
+        <input id="exam-at" type="datetime-local" value="${escapeHtml(toDatetimeLocalValue(iso))}">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close>取消</button>
+        ${iso ? '<button type="button" class="danger" id="exam-clear">清除</button>' : ''}
+        <button type="button" class="primary" id="exam-save">保存</button>
+      </div>
+    </div>
+  `);
+  ui.overlay.querySelector('#exam-save').addEventListener('click', async () => {
+    await saveExamAt(fromDatetimeLocalValue(ui.overlay.querySelector('#exam-at').value));
+    closeOverlay();
+  });
+  const clearBtn = ui.overlay.querySelector('#exam-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      await saveExamAt('');
+      closeOverlay();
+    });
+  }
+}
+
+function renderNav() {
+  const books = (state.data && state.data.books) || emptyRendererState().books;
+  ui.nav.innerHTML = BOOKS.map((book) => {
+    const due = dueInBook(book.id);
+    const count = (((books[book.id] || {}).words) || []).length;
+    return `<button type="button" class="book-btn ${book.id === state.bookId ? 'active' : ''}" data-book="${book.id}">
+      <span><b>${book.name}</b><small>${count} 词</small></span>
+      <span class="badge ${due ? '' : 'empty'}">${due || count}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderList() {
+  const meta = bookMeta(state.bookId);
+  const words = filteredWords();
+  const all = currentWords();
+  ui.title.textContent = meta.name;
+  ui.en.textContent = meta.en;
+  ui.hint.textContent = meta.hint;
+  if (ui.speakAll) ui.speakAll.hidden = !meta.speak;
+  if (ui.dictation) ui.dictation.hidden = meta.id !== 'listening';
+  ui.stats.innerHTML = `
+    <div class="stat"><b>${all.length}</b><span>本册单词</span></div>
+    <div class="stat"><b>${dueInBook(state.bookId)}</b><span>待复习</span></div>
+  `;
+  if (!all.length) {
+    ui.list.innerHTML = `<article class="empty-card">
+      <h2>这一册还是空白</h2>
+      <p>打字加入，或把标了重点的页面拍下来扫描。进入单词本后，每隔 1–2 小时会提醒你复习。</p>
+    </article>`;
+    return;
+  }
+  if (!words.length) {
+    ui.list.innerHTML = `<article class="empty-card"><h2>没有匹配的单词</h2><p>试试别的检索词。</p></article>`;
+    return;
+  }
+  ui.list.innerHTML = words.map((word) => `
+    <article class="word-card ${isDue(word) ? 'due' : ''}" data-id="${escapeHtml(word.id)}">
+      <div>
+        <div class="word-en">${escapeHtml(word.text)}<span class="phonetic">${escapeHtml(word.phonetic)}</span></div>
+        ${meaningHtml(word)}
+        ${tagHtml(word)}
+        ${examplePickerHtml(word)}
+        <p class="meta">${isDue(word) ? '现在可复习' : '下次 ' + new Date(word.review.dueAt).toLocaleString()}</p>
+      </div>
+      <div class="row-actions">
+        <button type="button" class="ghost" data-act="speak">发音</button>
+        <button type="button" class="ghost" data-act="edit">编辑</button>
+        <button type="button" class="danger" data-act="delete">删除</button>
+      </div>
+    </article>
+  `).join('');
+  ui.list.querySelectorAll('.word-card').forEach((card) => {
+    const word = all.find(item => item.id === card.dataset.id);
+    card.querySelector('[data-act="speak"]').addEventListener('click', () => speak(word.text));
+    card.querySelector('[data-act="edit"]').addEventListener('click', () => openWordForm(word));
+    bindExamplePanel(card, word);
+    card.querySelector('[data-act="delete"]').addEventListener('click', async () => {
+      if (!window.confirm(`从「${meta.name}」中删除 ${word.text}？`)) return;
+      await api.deleteWord(state.bookId, word.id);
+      await reload();
+    });
+  });
+}
+
+function render() {
+  renderNav();
+  renderList();
+  renderExamCountdown();
+  const filter = document.getElementById('tag-filter');
+  if (filter) {
+    const current = state.tagFilter;
+    filter.innerHTML = `<option value="">全部来源</option>${tagOptions(current)}`;
+    filter.value = current;
+  }
+}
+
+async function reload() {
+  state.data = await api.getState();
+  if (ui.exam) {
+    ui.exam.dataset.mode = '';
+    ui.exam.dataset.at = '';
+  }
+  render();
+}
+
+function extractEnglishItems(raw) {
+  const seen = new Set();
+  const out = [];
+  String(raw || '')
+    .replace(/[\u3400-\u9fff\uf900-\ufaff]+/g, '\n')
+    .split(/[\n\r,，、;；|]+/)
+    .forEach((item) => {
+      const text = String(item || '')
+        .replace(/[^A-Za-z'’\-\s]/g, ' ')
+        .replace(/['’]+/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!text || text.length > 80 || !/[A-Za-z]{2,}/.test(text)) return;
+      const parts = text.split(' ');
+      const chunks = parts.length > 8 ? parts : [text];
+      chunks.forEach((chunk) => {
+        const value = String(chunk || '').trim();
+        if (!value || value.length > 80 || !/[A-Za-z]{2,}/.test(value)) return;
+        const key = value.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(value);
+      });
+    });
+  return out;
+}
+
+function parseBatchItems(raw) {
+  return extractEnglishItems(raw);
+}
+
+function primaryEnglish(raw) {
+  return extractEnglishItems(raw)[0] || '';
+}
+
+function wordSnippet(word) {
+  return String(word.ieltsMeaning || word.meaning || word.otherMeanings || word.notes || '').replace(/\s+/g, ' ').trim();
+}
+
+async function deleteSelectedWords(bookId, ids) {
+  const list = (ids || []).map(item => String(item)).filter(Boolean);
+  if (!list.length) return 0;
+  if (api.deleteWords) {
+    const result = await api.deleteWords(bookId, list);
+    return (result && result.deleted) || list.length;
+  }
+  for (const id of list) await api.deleteWord(bookId, id);
+  return list.length;
+}
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      out[index] = await fn(items[index], index);
+    }
+  }
+  const n = Math.max(1, Math.min(limit || 4, items.length || 1));
+  await Promise.all(Array.from({ length: items.length ? n : 0 }, worker));
+  return out;
+}
+
+function addModeSwitch(mode) {
+  return `<div class="scan-mode" role="radiogroup" aria-label="加入方式">
+    <label>
+      <input type="radio" name="add-mode" value="single" ${mode === 'single' ? 'checked' : ''}>
+      <span><b>单个加入</b><small>查完释义再保存</small></span>
+    </label>
+    <label>
+      <input type="radio" name="add-mode" value="batch" ${mode === 'batch' ? 'checked' : ''}>
+      <span><b>批量加入</b><small>每行一个词或短语</small></span>
+    </label>
+  </div>`;
+}
+
+function openWordForm(existing, startMode) {
+  const word = existing || { text: '', meaning: '', ieltsMeaning: '', otherMeanings: '', phonetic: '', example: '', notes: '', tags: [] };
+  const tagValue = (word.tags || [])[0] || '';
+  let mode = existing ? 'single' : (startMode === 'batch' ? 'batch' : 'single');
+
+  function bindModeSwitch() {
+    ui.overlay.querySelectorAll('input[name="add-mode"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        if (!input.checked) return;
+        mode = input.value;
+        paint();
+      });
+    });
+  }
+
+  function paintSingle() {
+    openOverlay(`
+      <div class="modal">
+        <h2>${existing ? '编辑单词' : '打字加入'}</h2>
+        ${existing ? '' : addModeSwitch('single')}
+        <p class="help">加入后会进入当前「${bookMeta(state.bookId).name}」单词本。手动输入时中文会自动忽略，只保留英文单词或短语。释义会优先展示雅思常考意思，并保留其他义项。</p>
+        <div class="grid-2">
+          <label class="field"><span>单词</span><input id="f-text" value="${escapeHtml(word.text)}" ${existing ? 'readonly' : ''} placeholder="例如：certificate 证书"></label>
+          <label class="field"><span>音标</span><input id="f-phonetic" value="${escapeHtml(word.phonetic)}"></label>
+        </div>
+        <label class="field"><span>来源书 / 标签</span>
+          <input id="f-tag" list="tag-list" value="${escapeHtml(tagValue)}" placeholder="例如：剑雅 17、王陆 807">
+          <datalist id="tag-list">${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+        </label>
+        <label class="field"><span>雅思常考意思</span><textarea id="f-ielts">${escapeHtml(word.ieltsMeaning || word.meaning)}</textarea></label>
+        <label class="field"><span>其他意思</span><textarea id="f-other">${escapeHtml(word.otherMeanings)}</textarea></label>
+        <label class="field"><span>例句</span><textarea id="f-example">${escapeHtml(word.example)}</textarea></label>
+        <label class="field"><span>笔记</span><textarea id="f-notes">${escapeHtml(word.notes)}</textarea></label>
+        <p class="help" id="f-status"></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>取消</button>
+          <button type="button" class="secondary" id="f-lookup">自动查词</button>
+          <button type="button" class="primary" id="f-save">保存</button>
+        </div>
+      </div>
+    `);
+    const $ = (id) => ui.overlay.querySelector(id);
+    bindModeSwitch();
+    $('#f-lookup').addEventListener('click', async () => {
+      const status = $('#f-status');
+      const english = existing ? String($('#f-text').value || '').trim() : primaryEnglish($('#f-text').value);
+      if (english && !existing) $('#f-text').value = english;
+      if (!english) {
+        if (status) status.textContent = '请先输入英文单词或短语，中文会被忽略。';
+        return;
+      }
+      $('#f-lookup').disabled = true;
+      $('#f-lookup').textContent = '正在查词…';
+      if (status) status.textContent = '正在查有道词典…';
+      try {
+        const queried = english;
+        const found = await lookupWord(queried);
+        if (String($('#f-text').value || '').trim() !== queried) return;
+        if (found.ieltsMeaning || found.phonetic || found.example) {
+          $('#f-phonetic').value = found.phonetic || '';
+          $('#f-ielts').value = found.ieltsMeaning || '';
+          $('#f-other').value = found.otherMeanings || '';
+          $('#f-example').value = found.example || '';
+          if (status) status.textContent = '已填入查到的释义。';
+        } else if (status) {
+          status.textContent = '没有查到释义，可以先手填再保存。';
+        }
+      } catch (err) {
+        if (status) status.textContent = err.message || '查词失败';
+      }
+      $('#f-lookup').disabled = false;
+      $('#f-lookup').textContent = '自动查词';
+    });
+    if (!existing) {
+      $('#f-text').addEventListener('blur', () => {
+        const english = primaryEnglish($('#f-text').value);
+        if (english) $('#f-text').value = english;
+      });
+    }
+    $('#f-save').addEventListener('click', async () => {
+      const english = existing ? String($('#f-text').value || '').trim() : primaryEnglish($('#f-text').value);
+      if (english && !existing) $('#f-text').value = english;
+      if (!english) {
+        const status = $('#f-status');
+        if (status) status.textContent = '请输入英文单词或短语，中文会被忽略。';
+        return;
+      }
+      const payload = {
+        text: english,
+        phonetic: $('#f-phonetic').value.trim(),
+        ieltsMeaning: $('#f-ielts').value.trim(),
+        otherMeanings: $('#f-other').value.trim(),
+        meaning: $('#f-ielts').value.trim(),
+        example: $('#f-example').value.trim(),
+        notes: $('#f-notes').value.trim(),
+        tags: $('#f-tag').value.trim() ? [$('#f-tag').value.trim()] : [],
+        source: existing ? existing.source : 'manual',
+      };
+      if (!payload.text) return;
+      if (existing) await api.updateWord(state.bookId, existing.id, payload);
+      else await api.addWords(state.bookId, [payload]);
+      closeOverlay();
+      await reload();
+    });
+    $('#f-text').focus();
+  }
+
+  function paintBatch() {
+    openOverlay(`
+      <div class="modal">
+        <h2>批量加入</h2>
+        ${addModeSwitch('batch')}
+        <p class="help">每行一个单词或短语，也可用逗号分隔。中文会自动忽略，只识别英文；中文两边的英文会拆成多条。会加入当前「${bookMeta(state.bookId).name}」单词本，已有的词会自动跳过。</p>
+        <label class="field"><span>来源书 / 标签</span>
+          <input id="f-tag" list="tag-list" value="${escapeHtml(tagValue)}" placeholder="例如：剑雅 17、王陆 807">
+          <datalist id="tag-list">${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+        </label>
+        <label class="field"><span>词语列表</span>
+          <textarea id="f-batch" class="batch-input" placeholder="airfare 机票&#10;in advance 提前&#10;have to"></textarea>
+        </label>
+        <label class="check-row">
+          <input id="f-batch-lookup" type="checkbox" checked>
+          <span>加入时自动查释义（有道词典，已在本册的不查）</span>
+        </label>
+        <p class="help" id="f-status"></p>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>取消</button>
+          <button type="button" class="primary" id="f-save">加入本册</button>
+        </div>
+      </div>
+    `);
+    const $ = (id) => ui.overlay.querySelector(id);
+    bindModeSwitch();
+    $('#f-save').addEventListener('click', async () => {
+      const items = parseBatchItems($('#f-batch').value);
+      const status = $('#f-status');
+      if (!items.length) {
+        if (status) status.textContent = '没有识别到英文。请粘贴单词或短语，中文会被忽略。';
+        return;
+      }
+      const existingKeys = bookWordKeys(state.bookId);
+      const fresh = items.filter(text => !existingKeys.has(text.toLowerCase()));
+      const skipped = items.length - fresh.length;
+      if (!fresh.length) {
+        if (status) status.textContent = `这 ${items.length} 个词都已在本册，没有新词可加入。`;
+        return;
+      }
+      const tag = ($('#f-tag').value || '').trim();
+      const doLookup = $('#f-batch-lookup').checked;
+      $('#f-save').disabled = true;
+      let filled;
+      try {
+        if (doLookup) {
+          let done = 0;
+          if (status) status.textContent = `正在查词 0 / ${fresh.length}…`;
+          filled = await mapLimit(fresh, 4, async (text) => {
+            const extra = await lookupWord(text);
+            done += 1;
+            if (status) status.textContent = `正在查词 ${done} / ${fresh.length}…`;
+            return Object.assign({ source: 'manual', tags: tag ? [tag] : [] }, extra, { text });
+          });
+        } else {
+          filled = fresh.map(text => ({ text, source: 'manual', tags: tag ? [tag] : [] }));
+        }
+        const result = await api.addWords(state.bookId, filled);
+        closeOverlay();
+        await reload();
+        const added = (result && result.added && result.added.length) || fresh.length;
+        const existed = skipped + ((result && result.existing && result.existing.length) || 0);
+        openOverlay(`<div class="modal"><h2>已加入本册</h2><p class="help">新增 ${added} 个词条${existed ? `，另有 ${existed} 个已在本册，没有重复添加` : ''}。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+      } catch (err) {
+        if (status) status.textContent = err.message || '加入失败';
+        $('#f-save').disabled = false;
+      }
+    });
+    $('#f-batch').focus();
+  }
+
+  function paint() {
+    if (mode === 'batch' && !existing) paintBatch();
+    else paintSingle();
+  }
+  paint();
+}
+
+function openBatchManage() {
+  const meta = bookMeta(state.bookId);
+  const all = currentWords().slice().sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }));
+  const selected = new Set();
+  let query = '';
+
+  function visibleWords() {
+    const q = query.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(word => `${word.text} ${word.ieltsMeaning || ''} ${word.meaning || ''} ${word.otherMeanings || ''} ${(word.tags || []).join(' ')}`.toLowerCase().includes(q));
+  }
+
+  function paintList() {
+    const list = ui.overlay.querySelector('#manage-list');
+    const count = ui.overlay.querySelector('#manage-count');
+    const shown = visibleWords();
+    if (!all.length) {
+      list.innerHTML = '<article class="empty-card"><h2>这一册还是空白</h2><p>没有可删除的词条。</p></article>';
+    } else if (!shown.length) {
+      list.innerHTML = '<article class="empty-card"><h2>没有匹配的单词</h2><p>试试别的检索词。</p></article>';
+    } else {
+      list.innerHTML = shown.map((word) => {
+        const snippet = wordSnippet(word);
+        return `<label class="manage-row">
+          <input type="checkbox" data-id="${escapeHtml(word.id)}" ${selected.has(word.id) ? 'checked' : ''}>
+          <span><b>${escapeHtml(word.text)}</b>${snippet ? `<small>${escapeHtml(snippet)}</small>` : ''}</span>
+        </label>`;
+      }).join('');
+    }
+    if (count) count.textContent = `已选 ${selected.size} / 本册 ${all.length}`;
+  }
+
+  function updateCount() {
+    const count = ui.overlay.querySelector('#manage-count');
+    if (count) count.textContent = `已选 ${selected.size} / 本册 ${all.length}`;
+  }
+
+  openOverlay(`
+    <div class="modal">
+      <h2>批量管理</h2>
+      <p class="help">勾选当前「${meta.name}」里要删掉的词条，确认后会从本册删除，不会动其他三册。</p>
+      <div class="manage-toolbar">
+        <label class="search">
+          <span>检索</span>
+          <input id="manage-search" type="search" placeholder="按单词或释义筛选">
+        </label>
+        <button type="button" class="ghost" id="manage-all">全选当前列表</button>
+        <button type="button" class="ghost" id="manage-none">取消全选</button>
+        <span class="manage-count" id="manage-count"></span>
+      </div>
+      <div class="manage-list" id="manage-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close>关闭</button>
+        <button type="button" class="danger" id="manage-delete">删除所选</button>
+      </div>
+    </div>
+  `);
+  paintList();
+  ui.overlay.querySelector('#manage-search').addEventListener('input', (event) => {
+    query = event.target.value;
+    paintList();
+  });
+  ui.overlay.querySelector('#manage-list').addEventListener('change', (event) => {
+    const box = event.target.closest('input[data-id]');
+    if (!box) return;
+    if (box.checked) selected.add(box.dataset.id);
+    else selected.delete(box.dataset.id);
+    updateCount();
+  });
+  ui.overlay.querySelector('#manage-all').addEventListener('click', () => {
+    visibleWords().forEach(word => selected.add(word.id));
+    paintList();
+  });
+  ui.overlay.querySelector('#manage-none').addEventListener('click', () => {
+    selected.clear();
+    paintList();
+  });
+  ui.overlay.querySelector('#manage-delete').addEventListener('click', async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!window.confirm(`从「${meta.name}」中删除 ${ids.length} 个词条？`)) return;
+    await deleteSelectedWords(state.bookId, ids);
+    closeOverlay();
+    await reload();
+  });
+  ui.overlay.querySelector('#manage-search').focus();
+}
+
+function scanHelpText(mode, colorName) {
+  if (mode === 'all') {
+    return '将识别图片里的英文单词和短语，例如 in advance、have to、as well as。逗号或中文分隔的会拆成多条，the / of 等单独虚词会过滤。适合整页词汇表。';
+  }
+  return `当前识别<strong>${colorName}</strong>涂出的单词和短语，不会把红色印刷字当成标记。短语会整段收录，逗号分隔的会拆成多条。请用荧光笔涂在词或短语上。`;
+}
+
+function normalizeDictation(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/['’]/g, "'")
+    .replace(/-/g, ' ')
+    .replace(/[^a-z']+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function openScan() {
+  const color = ((state.data.settings || {}).highlightColor) || 'auto';
+  const colorName = COLOR_LABELS[color] || COLOR_LABELS.auto;
+  let scanMode = ((state.data.settings || {}).scanMode) === 'all' ? 'all' : 'highlight';
+  openOverlay(`
+    <div class="modal wide">
+      <h2>扫描加入</h2>
+      <div class="scan-mode" role="radiogroup" aria-label="扫描范围">
+        <label>
+          <input type="radio" name="scan-mode" value="all" ${scanMode === 'all' ? 'checked' : ''}>
+          <span><b>扫描所有词条</b><small>整页单词和短语都收进来</small></span>
+        </label>
+        <label>
+          <input type="radio" name="scan-mode" value="highlight" ${scanMode === 'highlight' ? 'checked' : ''}>
+          <span><b>只扫描带高光的</b><small>荧光笔涂出的词和短语</small></span>
+        </label>
+      </div>
+      <p class="help scan-alert" id="scan-help">${scanHelpText(scanMode, colorName)}</p>
+      <label class="field"><span>这批词来自哪本书（标签）</span>
+        <input id="scan-tag" list="tag-list" placeholder="例如：剑雅 17">
+        <datalist id="tag-list">${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+      </label>
+      <input id="scan-file" type="file" accept="image/*">
+      <img id="scan-preview" class="scan-preview" alt="" hidden>
+      <p class="help" id="scan-status"></p>
+      <div id="scan-candidates" class="candidates"></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close>取消</button>
+        <button type="button" class="primary" id="scan-add" disabled>加入本册</button>
+      </div>
+    </div>
+  `);
+
+  const status = ui.overlay.querySelector('#scan-status');
+  const help = ui.overlay.querySelector('#scan-help');
+  const preview = ui.overlay.querySelector('#scan-preview');
+  const box = ui.overlay.querySelector('#scan-candidates');
+  const addBtn = ui.overlay.querySelector('#scan-add');
+  let pending = [];
+  let lastFile = null;
+  let runId = 0;
+
+  async function rememberMode(next) {
+    scanMode = next;
+    help.innerHTML = scanHelpText(scanMode, colorName);
+    if (!state.data.settings) state.data.settings = {};
+    state.data.settings.scanMode = scanMode;
+    try { await api.updateSettings({ scanMode }); } catch (_) { /* preview */ }
+  }
+
+  async function recognize(file) {
+    if (!file) return;
+    lastFile = file;
+    const id = ++runId;
+    status.textContent = scanMode === 'all' ? '正在识别整页单词和短语…' : '正在寻找荧光笔区域…';
+    addBtn.disabled = true;
+    box.innerHTML = '';
+    try {
+      const img = await window.HighlightScan.loadImageFile(file);
+      const prepared = window.HighlightScan.prepareImage(img, { color, mode: scanMode });
+      if (id !== runId) return;
+      preview.src = prepared.previewUrl;
+      preview.hidden = false;
+      if (scanMode === 'highlight' && !prepared.boxCount) {
+        status.textContent = `没有找到${colorName}涂色。请确认用的是荧光笔而不是红色印刷字；也可在设置里换黄/绿/粉。`;
+        return;
+      }
+      status.textContent = scanMode === 'all'
+        ? '正在识别整页英文单词和短语…'
+        : `找到 ${prepared.boxCount} 处${colorName}区域，正在识别单词…`;
+      const result = await api.recognizeImage({
+        dataUrl: prepared.dataUrl,
+        regionDataUrls: prepared.regionDataUrls,
+        mode: scanMode,
+      });
+      if (id !== runId) return;
+      pending = result.words || [];
+      if (!pending.length) {
+        status.textContent = scanMode === 'all'
+          ? '没有识别出完整英文词或短语。请拍清楚一些，或换「只扫描带高光的」。'
+          : '涂色区域里没有识别出完整英文词。请拍清楚一些，并确保荧光笔盖在单词上。';
+        return;
+      }
+      const existingKeys = bookWordKeys(state.bookId);
+      let existingCount = 0;
+      box.innerHTML = pending.map((item, index) => {
+        const exists = existingKeys.has(String(item.text || '').trim().toLowerCase());
+        if (exists) existingCount += 1;
+        const checked = !exists && (/\s/.test(item.text) || item.text.length >= 3) ? 'checked' : '';
+        return `<label class="chip${exists ? ' existing' : ''}"><input type="checkbox" data-i="${index}" ${checked} ${exists ? 'disabled' : ''}> ${escapeHtml(item.text)}${exists ? '<small>已有</small>' : ''}</label>`;
+      }).join('');
+      const freshCount = pending.length - existingCount;
+      const skipNote = existingCount ? `，${existingCount} 个已在本册，已跳过` : '';
+      status.textContent = scanMode === 'all'
+        ? `整页识别到 ${pending.length} 个词条${skipNote}。请确认后加入。`
+        : `从${colorName}中识别到 ${pending.length} 个单词${skipNote}。请确认后加入。`;
+      addBtn.disabled = freshCount === 0;
+      if (!freshCount) status.textContent = `识别到的 ${pending.length} 个词条都已在本册，无需重复加入。`;
+    } catch (err) {
+      if (id !== runId) return;
+      status.textContent = err.message || '识别失败';
+    }
+  }
+
+  ui.overlay.querySelectorAll('input[name="scan-mode"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      rememberMode(input.value);
+      if (lastFile) recognize(lastFile);
+    });
+  });
+  ui.overlay.querySelector('#scan-file').addEventListener('change', (event) => recognize(event.target.files[0]));
+  ui.overlay.addEventListener('dragover', (event) => event.preventDefault());
+  ui.overlay.addEventListener('drop', (event) => {
+    event.preventDefault();
+    recognize(event.dataTransfer.files[0]);
+  });
+  scanPasteHandler = (event) => {
+    const file = [...(event.clipboardData && event.clipboardData.items || [])]
+      .map(item => item.kind === 'file' ? item.getAsFile() : null)
+      .find(Boolean);
+    if (file) recognize(file);
+  };
+  addBtn.addEventListener('click', async () => {
+    const existingKeys = bookWordKeys(state.bookId);
+    const selected = [...box.querySelectorAll('input:checked:not(:disabled)')]
+      .map(input => pending[Number(input.dataset.i)])
+      .filter(item => item && !existingKeys.has(String(item.text || '').trim().toLowerCase()));
+    if (!selected.length) {
+      status.textContent = '没有新词可加入。已在本册的词不会重复添加。';
+      return;
+    }
+    addBtn.disabled = true;
+    status.textContent = `正在查词 0 / ${selected.length}…`;
+    const tag = (ui.overlay.querySelector('#scan-tag').value || '').trim();
+    let done = 0;
+    const filled = await mapLimit(selected, 4, async (item) => {
+      const extra = await lookupWord(item.text);
+      done += 1;
+      status.textContent = `正在查词 ${done} / ${selected.length}…`;
+      return Object.assign({ source: item.source || 'ocr', tags: tag ? [tag] : [] }, extra, { text: item.text });
+    });
+    const result = await api.addWords(state.bookId, filled);
+    closeOverlay();
+    await reload();
+    const added = (result && result.added && result.added.length) || selected.length;
+    const skipped = (result && result.existing && result.existing.length) || 0;
+    if (skipped) {
+      openOverlay(`<div class="modal"><h2>已加入本册</h2><p class="help">新增 ${added} 个词条，另有 ${skipped} 个本来就在本册，没有重复添加。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    }
+  });
+}
+
+function collectReviewQueue(oneBook) {
+  const ids = oneBook ? [state.bookId] : BOOKS.map(item => item.id);
+  const queue = [];
+  ids.forEach((bookId) => {
+    ((((state.data.books || {})[bookId] || {}).words) || []).forEach((word) => {
+      if (isDue(word)) queue.push({ bookId, word });
+    });
+  });
+  return queue;
+}
+
+function openReview(oneBook) {
+  const queue = collectReviewQueue(oneBook);
+  if (!queue.length) {
+    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词加入后会在 1–2 小时内进入提醒。到点后点菜单栏图标或通知即可开始。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    return;
+  }
+  let index = 0;
+  let phase = 'ask';
+
+  function paint() {
+    const item = queue[index];
+    const meta = bookMeta(item.bookId);
+    const last = index >= queue.length - 1;
+    openOverlay(`
+      <div class="modal">
+        <div class="review-card">
+          <p class="progress">${meta.name} · ${index + 1} / ${queue.length}</p>
+          <div class="review-word">${escapeHtml(item.word.text)}</div>
+          <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+          ${phase === 'ask' ? '<p class="review-meaning">先判断，再看释义</p>' : meaningHtml(item.word)}
+          ${phase === 'show' ? tagHtml(item.word) : ''}
+          ${phase === 'show' ? examplePickerHtml(item.word) : ''}
+          <div class="modal-actions" style="justify-content:center">
+            <button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+            <button type="button" class="ghost" data-close>结束</button>
+            <button type="button" class="secondary" id="rv-speak">发音</button>
+            ${phase === 'ask' ? `
+              <button type="button" class="danger" id="rv-again">不认识</button>
+              <button type="button" class="secondary" id="rv-hard">模糊</button>
+              <button type="button" class="primary" id="rv-good">认识</button>
+            ` : `
+              <button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button>
+            `}
+          </div>
+        </div>
+      </div>
+    `);
+    speak(item.word.text);
+    ui.overlay.querySelector('#rv-speak').addEventListener('click', () => speak(item.word.text));
+    ui.overlay.querySelector('#rv-prev').addEventListener('click', () => {
+      if (index === 0) return;
+      index -= 1;
+      phase = 'ask';
+      paint();
+    });
+    if (phase === 'show') bindExamplePanel(ui.overlay, item.word);
+    const rate = async (rating) => {
+      await api.reviewWord(item.bookId, item.word.id, rating);
+      await reload();
+      phase = 'show';
+      paint();
+    };
+    if (phase === 'ask') {
+      ui.overlay.querySelector('#rv-again').addEventListener('click', () => rate('again'));
+      ui.overlay.querySelector('#rv-hard').addEventListener('click', () => rate('hard'));
+      ui.overlay.querySelector('#rv-good').addEventListener('click', () => rate('good'));
+    } else {
+      ui.overlay.querySelector('#rv-next').addEventListener('click', () => {
+        if (last) {
+          openOverlay(`<div class="modal"><h2>这轮复习完成</h2><p class="help">已记住进度。到期单词会继续按 1–2 小时提醒。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+          return;
+        }
+        index += 1;
+        phase = 'ask';
+        paint();
+      });
+    }
+  }
+  paint();
+}
+
+function openDictation() {
+  let queue = collectReviewQueue(true);
+  const usingDue = queue.length > 0;
+  if (!queue.length) {
+    queue = currentWords().map(word => ({ bookId: state.bookId, word }));
+  }
+  if (!queue.length) {
+    openOverlay(`<div class="modal"><h2>还没有可听写的单词</h2><p class="help">先在听力册加入单词，再来听写。有到期词时会优先听写到期的。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    return;
+  }
+  let index = 0;
+  let phase = 'ask';
+  let typed = '';
+  let correct = false;
+
+  function paint() {
+    const item = queue[index];
+    const last = index >= queue.length - 1;
+    const title = usingDue ? '到期听写' : '本册听写';
+    if (phase === 'ask') {
+      openOverlay(`
+        <div class="modal">
+          <div class="review-card">
+            <p class="progress">听力 · ${title} · ${index + 1} / ${queue.length}</p>
+            <p class="dictation-prompt">请听写</p>
+            <input id="dt-input" class="dictation-input" type="text" autocomplete="off" spellcheck="false" placeholder="听到的单词或短语">
+            <div class="modal-actions" style="justify-content:center">
+              <button type="button" class="secondary" id="dt-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+              <button type="button" class="ghost" data-close>结束</button>
+              <button type="button" class="secondary" id="dt-speak">再听一遍</button>
+              <button type="button" class="ghost" id="dt-skip">不会</button>
+              <button type="button" class="primary" id="dt-submit">提交</button>
+            </div>
+          </div>
+        </div>
+      `);
+      const input = ui.overlay.querySelector('#dt-input');
+      input.focus();
+      speak(item.word.text);
+      const reveal = (value) => {
+        typed = String(value || '').trim();
+        correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
+        phase = 'show';
+        paint();
+      };
+      ui.overlay.querySelector('#dt-speak').addEventListener('click', () => speak(item.word.text));
+      ui.overlay.querySelector('#dt-prev').addEventListener('click', () => {
+        if (index === 0) return;
+        index -= 1;
+        phase = 'ask';
+        typed = '';
+        correct = false;
+        paint();
+      });
+      ui.overlay.querySelector('#dt-submit').addEventListener('click', () => reveal(input.value));
+      ui.overlay.querySelector('#dt-skip').addEventListener('click', () => reveal(''));
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          reveal(input.value);
+        }
+      });
+      return;
+    }
+
+    openOverlay(`
+      <div class="modal">
+        <div class="review-card">
+          <p class="progress">听力 · ${title} · ${index + 1} / ${queue.length}</p>
+          <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看答案，再判断')}</p>
+          ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
+          <div class="review-word">${escapeHtml(item.word.text)}</div>
+          <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+          ${meaningHtml(item.word)}
+          ${tagHtml(item.word)}
+          ${examplePickerHtml(item.word)}
+          <div class="modal-actions" style="justify-content:center">
+            <button type="button" class="secondary" id="dt-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+            <button type="button" class="ghost" data-close>结束</button>
+            <button type="button" class="secondary" id="dt-speak">发音</button>
+            <button type="button" class="danger" id="rv-again">不认识</button>
+            <button type="button" class="secondary" id="rv-hard">模糊</button>
+            <button type="button" class="primary" id="rv-good">认识</button>
+          </div>
+        </div>
+      </div>
+    `);
+    bindExamplePanel(ui.overlay, item.word);
+    ui.overlay.querySelector('#dt-speak').addEventListener('click', () => speak(item.word.text));
+    ui.overlay.querySelector('#dt-prev').addEventListener('click', () => {
+      if (index === 0) return;
+      index -= 1;
+      phase = 'ask';
+      typed = '';
+      correct = false;
+      paint();
+    });
+    const rate = async (rating) => {
+      await api.reviewWord(item.bookId, item.word.id, rating);
+      await reload();
+      if (last) {
+        openOverlay(`<div class="modal"><h2>听写完成</h2><p class="help">已记住进度。可以随时再打开听力册继续听写。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+        return;
+      }
+      index += 1;
+      phase = 'ask';
+      typed = '';
+      correct = false;
+      paint();
+    };
+    ui.overlay.querySelector('#rv-again').addEventListener('click', () => rate('again'));
+    ui.overlay.querySelector('#rv-hard').addEventListener('click', () => rate('hard'));
+    ui.overlay.querySelector('#rv-good').addEventListener('click', () => rate('good'));
+  }
+  paint();
+}
+
+function openPlayer() {
+  const words = currentWords();
+  if (!words.length) return;
+  let index = 0;
+  let paused = false;
+  state.speaking = true;
+  const settings = state.data.settings || {};
+  const repeat = Math.max(1, Number(settings.ttsRepeat) || 1);
+  const gap = Math.max(400, Number(settings.ttsGapMs) || 900);
+
+  function paint() {
+    const word = words[index];
+    openOverlay(`
+      <div class="modal">
+        <div class="player-card">
+          <p class="progress">全部发音 · ${index + 1} / ${words.length}</p>
+          <div class="player-word">${escapeHtml(word.text)}</div>
+          <div class="phonetic">${escapeHtml(word.phonetic)}</div>
+          ${meaningHtml(word)}
+          <div class="modal-actions" style="justify-content:center">
+            <button type="button" class="ghost" data-close>停止</button>
+            <button type="button" class="secondary" id="pl-prev">上一词</button>
+            <button type="button" class="secondary" id="pl-pause">${paused ? '继续' : '暂停'}</button>
+            <button type="button" class="primary" id="pl-next">下一词</button>
+          </div>
+        </div>
+      </div>
+    `);
+    ui.overlay.querySelector('#pl-prev').addEventListener('click', () => { index = Math.max(0, index - 1); playCurrent(0); });
+    ui.overlay.querySelector('#pl-next').addEventListener('click', () => { index = Math.min(words.length - 1, index + 1); playCurrent(0); });
+    ui.overlay.querySelector('#pl-pause').addEventListener('click', () => {
+      paused = !paused;
+      if (paused) window.speechSynthesis.cancel();
+      else playCurrent(0);
+      paint();
+    });
+  }
+
+  function playCurrent(times) {
+    if (!state.speaking || paused) return;
+    paint();
+    speak(words[index].text, () => {
+      if (!state.speaking || paused) return;
+      if (times + 1 < repeat) {
+        setTimeout(() => playCurrent(times + 1), gap);
+        return;
+      }
+      if (index + 1 >= words.length) {
+        state.speaking = false;
+        openOverlay(`<div class="modal"><h2>播放完成</h2><p class="help">本册 ${words.length} 个单词已经全部读完。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+        return;
+      }
+      index += 1;
+      setTimeout(() => playCurrent(0), gap);
+    });
+  }
+  playCurrent(0);
+}
+
+async function openSettings() {
+  const info = await api.getDataInfo();
+  const s = state.data.settings;
+  openOverlay(`
+    <div class="modal">
+      <h2>设置与备份</h2>
+      <p class="help">单词存在用户目录，不在软件安装包里。以后更新功能、重装或替换 App，都不会清空已有单词和复习记录。</p>
+      <label class="field"><span>复习提醒</span>
+        <select id="s-on"><option value="1">开启，每隔 1–2 小时</option><option value="0">关闭</option></select>
+      </label>
+      <label class="field"><span>提醒间隔（分钟）</span>
+        <input id="s-min" type="number" min="60" max="120" value="${escapeHtml(s.reminderMinutes)}">
+      </label>
+      <label class="field"><span>发音语速</span>
+        <input id="s-rate" type="number" min="0.6" max="1.2" step="0.02" value="${escapeHtml(s.ttsRate)}">
+      </label>
+      <label class="field"><span>全部发音时每个单词重复次数</span>
+        <input id="s-rep" type="number" min="1" max="3" value="${escapeHtml(s.ttsRepeat)}">
+      </label>
+      <label class="field"><span>扫描标记颜色</span>
+        <select id="s-color">
+          <option value="auto">自动（橙 / 黄 / 绿，忽略红字）</option>
+          <option value="orange">只用橙色</option>
+          <option value="yellow">只用黄色</option>
+          <option value="green">只用绿色</option>
+          <option value="pink">只用粉色</option>
+        </select>
+      </label>
+      <p class="help">请用荧光笔涂在单词上。红色印刷字不会被当成标记。若橙色识别不准，可改成黄 / 绿 / 粉，改完后请用新颜色涂词。</p>
+      <label class="field"><span>雅思考试日期和时间</span>
+        <input id="s-exam" type="datetime-local" value="${escapeHtml(toDatetimeLocalValue(s.ieltsExamAt))}">
+      </label>
+      <p class="help">会显示在左侧四册下面。也可以直接点左侧倒计时卡片修改或清除。</p>
+      <label class="field"><span>登录 macOS 时自动打开词栖</span>
+        <select id="s-launch"><option value="0">否</option><option value="1">是</option></select>
+      </label>
+      <p class="help">数据文件</p>
+      <div class="settings-path">${escapeHtml(info.filePath)}</div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close>关闭</button>
+        <button type="button" class="secondary" id="s-folder">打开数据目录</button>
+        <button type="button" class="secondary" id="s-export">导出备份</button>
+        <button type="button" class="secondary" id="s-import">合并导入</button>
+        <button type="button" class="primary" id="s-save">保存设置</button>
+      </div>
+    </div>
+  `);
+  ui.overlay.querySelector('#s-on').value = s.reminderEnabled ? '1' : '0';
+  ui.overlay.querySelector('#s-launch').value = s.launchAtLogin ? '1' : '0';
+  ui.overlay.querySelector('#s-color').value = s.highlightColor || 'auto';
+  ui.overlay.querySelector('#s-save').addEventListener('click', async () => {
+    const minutes = Math.min(120, Math.max(60, Number(ui.overlay.querySelector('#s-min').value) || 90));
+    await api.updateSettings({
+      reminderEnabled: ui.overlay.querySelector('#s-on').value === '1',
+      reminderMinutes: minutes,
+      ttsRate: Number(ui.overlay.querySelector('#s-rate').value) || 0.92,
+      ttsRepeat: Number(ui.overlay.querySelector('#s-rep').value) || 1,
+      launchAtLogin: ui.overlay.querySelector('#s-launch').value === '1',
+      highlightColor: ui.overlay.querySelector('#s-color').value || 'auto',
+      ieltsExamAt: fromDatetimeLocalValue(ui.overlay.querySelector('#s-exam').value),
+    });
+    closeOverlay();
+    await reload();
+  });
+  ui.overlay.querySelector('#s-folder').addEventListener('click', () => api.openDataFolder());
+  ui.overlay.querySelector('#s-export').addEventListener('click', async () => {
+    const result = await api.exportData();
+    if (!result.canceled) closeOverlay();
+  });
+  ui.overlay.querySelector('#s-import').addEventListener('click', async () => {
+    const result = await api.importData();
+    if (result.canceled) return;
+    await reload();
+    const summary = result.summary || {};
+    openOverlay(`<div class="modal"><h2>已合并导入</h2><p class="help">新增 ${summary.added || 0} 个单词，原有 ${summary.existing || 0} 个保持不动。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+  });
+}
+
+function bindChrome() {
+  document.addEventListener('click', (event) => {
+    const bookBtn = event.target.closest('[data-book]');
+    if (bookBtn && ui.nav.contains(bookBtn)) {
+      state.bookId = bookBtn.dataset.book;
+      render();
+      return;
+    }
+    const closeBtn = event.target.closest('[data-close]');
+    if (closeBtn) {
+      closeOverlay();
+      return;
+    }
+    const button = event.target.closest('button');
+    if (!button) return;
+    if (button.id === 'btn-add') openWordForm();
+    else if (button.id === 'btn-scan') openScan();
+    else if (button.id === 'btn-manage') openBatchManage();
+    else if (button.id === 'btn-speak-all') openPlayer();
+    else if (button.id === 'btn-dictation') openDictation();
+    else if (button.id === 'btn-exam') openExamForm();
+    else if (button.id === 'btn-review-book') openReview(true);
+    else if (button.id === 'btn-review-due') openReview(false);
+    else if (button.id === 'btn-settings') openSettings();
+  });
+  ui.search.addEventListener('input', () => {
+    state.query = ui.search.value;
+    renderList();
+  });
+  const tagFilter = document.getElementById('tag-filter');
+  if (tagFilter) {
+    tagFilter.addEventListener('change', () => {
+      state.tagFilter = tagFilter.value;
+      renderList();
+    });
+  }
+  document.addEventListener('paste', (event) => {
+    if (scanPasteHandler) scanPasteHandler(event);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeOverlay();
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
+      event.preventDefault();
+      openWordForm();
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
+      event.preventDefault();
+      openReview(false);
+    }
+  });
+  ui.overlay.addEventListener('click', (event) => {
+    if (event.target === ui.overlay) closeOverlay();
+  });
+  if (!api.desktop && ui.dataHint) {
+    ui.dataHint.textContent = '当前是网页预览。请在 Mac 上用 npm start 启动桌面版，复习提醒和扫描才能完整工作。';
+  }
+  if (api.onStartReview) api.onStartReview(() => openReview(false));
+  if (window.speechSynthesis && window.speechSynthesis.getVoices) window.speechSynthesis.getVoices();
+}
+
+function boot() {
+  window.__wordnestBooted = true;
+  closeOverlay();
+  render();
+  bindChrome();
+  startExamTicker();
+  reload().catch((err) => {
+    ui.list.innerHTML = `<article class="empty-card"><h2>无法读取单词本</h2><p>${escapeHtml(err.message)}</p></article>`;
+  });
+}
+
+try {
+  boot();
+} catch (err) {
+  window.__wordnestBooted = true;
+  const list = document.getElementById('word-list');
+  if (list) {
+    list.innerHTML = `<article class="empty-card"><h2>界面启动失败</h2><p>${escapeHtml(err.message)}</p></article>`;
+  }
+}
