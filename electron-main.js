@@ -218,6 +218,8 @@ function registerIpc() {
     updateBadgeAndTray();
     return { canceled: false, summary };
   });
+  ipcMain.handle('store:importOverwrite', (_, incoming) => store.importOverwrite(incoming));
+  ipcMain.handle('store:exportPublic', () => store.exportPublicState());
   ipcMain.handle('ocr:recognize', async (_, payload) => {
     return recognizeImage({
       dataUrl: payload.dataUrl,

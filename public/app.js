@@ -37,6 +37,8 @@ function emptyRendererState() {
       scanMode: 'highlight',
       ieltsExamAt: '',
       savedTags: [],
+      cloudGistId: '',
+      cloudToken: '',
     },
     books: {
       reading: { words: [] },
@@ -105,6 +107,8 @@ function createLocalApi() {
       highlightColor: 'auto',
       scanMode: 'highlight',
       ieltsExamAt: '',
+      cloudGistId: '',
+      cloudToken: '',
     },
     books: {
       reading: { words: [] },
@@ -225,8 +229,37 @@ function createLocalApi() {
       Object.assign(data.settings, patch);
       return save(data);
     },
-    async exportData() { return { canceled: true }; },
+    async exportData() {
+      const blob = new Blob([JSON.stringify(publicCloudState(load()), null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `词栖备份-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      return { canceled: false };
+    },
     async importData() { return { canceled: true }; },
+    async importOverwrite(incoming) {
+      const data = load();
+      const keepToken = (data.settings || {}).cloudToken || '';
+      const keepGist = (data.settings || {}).cloudGistId || '';
+      const next = JSON.parse(JSON.stringify(emptyRendererState()));
+      next.settings = Object.assign({}, next.settings, (incoming && incoming.settings) || {});
+      next.settings.cloudToken = keepToken;
+      next.settings.cloudGistId = keepGist || next.settings.cloudGistId || '';
+      next.version = (incoming && incoming.version) || 1;
+      ['reading', 'listening', 'writing', 'speaking'].forEach((id) => {
+        const words = ((((incoming || {}).books || {})[id] || {}).words) || [];
+        next.books[id] = { words: words.filter(item => item && item.text) };
+      });
+      save(next);
+      let words = 0;
+      ['reading', 'listening', 'writing', 'speaking'].forEach((id) => {
+        words += (next.books[id].words || []).length;
+      });
+      return { words };
+    },
+    async exportPublicState() { return publicCloudState(load()); },
     async getDataInfo() { return { filePath: '浏览器 localStorage（仅开发预览）', userData: '' }; },
     async openDataFolder() { return false; },
     async recognizeImage() { throw new Error('扫描识别需要在 macOS 桌面版中使用'); },
@@ -258,6 +291,76 @@ function createLocalApi() {
 }
 
 const api = window.wordnest || createLocalApi();
+
+function publicCloudState(data) {
+  const next = JSON.parse(JSON.stringify(data || {}));
+  if (next.settings) delete next.settings.cloudToken;
+  return next;
+}
+
+function parseGistId(raw) {
+  const text = String(raw || '').trim();
+  const fromUrl = text.match(/gist\.github\.com\/(?:[^/]+\/)?([a-fA-F0-9]+)/);
+  if (fromUrl) return fromUrl[1];
+  const id = text.match(/^([a-fA-F0-9]+)$/);
+  return id ? id[1] : '';
+}
+
+async function gistError(res) {
+  try {
+    const data = await res.json();
+    return data.message || `GitHub ${res.status}`;
+  } catch (_) {
+    return `GitHub ${res.status}`;
+  }
+}
+
+function gistHeaders(token) {
+  return {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+}
+
+async function downloadCloudGist(gistId, token) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, { headers: gistHeaders(token) });
+  if (!res.ok) throw new Error(await gistError(res));
+  const gist = await res.json();
+  const files = gist.files || {};
+  const file = files['wordnest-data.json'] || Object.keys(files).map(name => files[name]).find(item => item && /\.json$/i.test(item.filename || ''));
+  if (!file) throw new Error('这个 Gist 里没有 JSON。请新建文件 wordnest-data.json，内容先写 {}。');
+  let content = file.content || '';
+  if (file.truncated && file.raw_url) {
+    const raw = await fetch(file.raw_url, { headers: gistHeaders(token) });
+    if (!raw.ok) throw new Error('云端文件太大，下载失败');
+    content = await raw.text();
+  }
+  const parsed = JSON.parse(content || '{}');
+  if (!parsed.books) throw new Error('云端 JSON 不是词栖备份');
+  return parsed;
+}
+
+async function uploadCloudGist(gistId, token, data) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    method: 'PATCH',
+    headers: Object.assign({ 'Content-Type': 'application/json' }, gistHeaders(token)),
+    body: JSON.stringify({
+      files: {
+        'wordnest-data.json': { content: JSON.stringify(publicCloudState(data), null, 2) },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(await gistError(res));
+}
+
+async function cloudCredentials() {
+  const settings = (state.data && state.data.settings) || {};
+  const gistId = parseGistId(settings.cloudGistId);
+  const token = String(settings.cloudToken || '').trim();
+  if (!gistId || !token) throw new Error('请先在设置里填写私有 Gist 和 Token，并保存。');
+  return { gistId, token };
+}
 
 async function lookupWord(text) {
   const word = String(text || '').trim();
@@ -1638,6 +1741,19 @@ async function openSettings() {
       <label class="field"><span>登录 macOS 时自动打开词栖</span>
         <select id="s-launch"><option value="0">否</option><option value="1">是</option></select>
       </label>
+      <h3 class="settings-sub">手机 / 电脑覆盖同步</h3>
+      <p class="help">用一份<strong>私有</strong> GitHub Gist 存单词 JSON。下载会用云端覆盖本机；上传会用本机覆盖云端。Token 只存在本机，不会上传。手机打开网页后也在这里填同一组 Gist 和 Token。</p>
+      <label class="field"><span>私有 Gist ID 或链接</span>
+        <input id="s-cloud-gist" value="${escapeHtml(s.cloudGistId || '')}" placeholder="https://gist.github.com/用户名/一串字母数字">
+      </label>
+      <label class="field"><span>GitHub Token（gist 权限）</span>
+        <input id="s-cloud-token" type="password" autocomplete="off" placeholder="${s.cloudToken ? '已保存，留空则不修改' : 'ghp_ 开头的令牌'}">
+      </label>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button type="button" class="secondary" id="s-cloud-down">下载覆盖本地</button>
+        <button type="button" class="secondary" id="s-cloud-up">上传覆盖云端</button>
+      </div>
+      <p class="help" id="s-cloud-status"></p>
       <p class="help">数据文件</p>
       <div class="settings-path">${escapeHtml(info.filePath)}</div>
       <div class="modal-actions">
@@ -1654,7 +1770,9 @@ async function openSettings() {
   ui.overlay.querySelector('#s-color').value = s.highlightColor || 'auto';
   ui.overlay.querySelector('#s-save').addEventListener('click', async () => {
     const minutes = Math.min(120, Math.max(60, Number(ui.overlay.querySelector('#s-min').value) || 90));
-    await api.updateSettings({
+    const gistId = parseGistId(ui.overlay.querySelector('#s-cloud-gist').value);
+    const token = (ui.overlay.querySelector('#s-cloud-token').value || '').trim();
+    const patch = {
       reminderEnabled: ui.overlay.querySelector('#s-on').value === '1',
       reminderMinutes: minutes,
       ttsRate: Number(ui.overlay.querySelector('#s-rate').value) || 0.92,
@@ -1663,7 +1781,10 @@ async function openSettings() {
       launchAtLogin: ui.overlay.querySelector('#s-launch').value === '1',
       highlightColor: ui.overlay.querySelector('#s-color').value || 'auto',
       ieltsExamAt: fromDatetimeLocalValue(ui.overlay.querySelector('#s-exam').value),
-    });
+      cloudGistId: gistId,
+    };
+    if (token) patch.cloudToken = token;
+    await api.updateSettings(patch);
     closeOverlay();
     await reload();
   });
@@ -1678,6 +1799,42 @@ async function openSettings() {
     await reload();
     const summary = result.summary || {};
     openOverlay(`<div class="modal"><h2>已合并导入</h2><p class="help">新增 ${summary.added || 0} 个单词，原有 ${summary.existing || 0} 个保持不动。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+  });
+  const cloudStatus = ui.overlay.querySelector('#s-cloud-status');
+  async function saveCloudFields() {
+    const gistId = parseGistId(ui.overlay.querySelector('#s-cloud-gist').value);
+    const token = (ui.overlay.querySelector('#s-cloud-token').value || '').trim();
+    const patch = { cloudGistId: gistId || ((state.data.settings || {}).cloudGistId) || '' };
+    if (token) patch.cloudToken = token;
+    await api.updateSettings(patch);
+    await reload();
+  }
+  ui.overlay.querySelector('#s-cloud-down').addEventListener('click', async () => {
+    if (!window.confirm('用云端单词完全覆盖本机四册？本机还没上传的改动会丢失。')) return;
+    cloudStatus.textContent = '正在下载…';
+    try {
+      await saveCloudFields();
+      const cred = await cloudCredentials();
+      const incoming = await downloadCloudGist(cred.gistId, cred.token);
+      const result = await api.importOverwrite(incoming);
+      await reload();
+      cloudStatus.textContent = `已用云端覆盖本机，共 ${result.words || 0} 个词。`;
+    } catch (err) {
+      cloudStatus.textContent = err.message || '下载失败';
+    }
+  });
+  ui.overlay.querySelector('#s-cloud-up').addEventListener('click', async () => {
+    if (!window.confirm('用本机单词完全覆盖云端？云端还没下载的改动会丢失。')) return;
+    cloudStatus.textContent = '正在上传…';
+    try {
+      await saveCloudFields();
+      const cred = await cloudCredentials();
+      const payload = api.exportPublicState ? await api.exportPublicState() : publicCloudState(state.data);
+      await uploadCloudGist(cred.gistId, cred.token, payload);
+      cloudStatus.textContent = '已用本机覆盖云端。';
+    } catch (err) {
+      cloudStatus.textContent = err.message || '上传失败';
+    }
   });
 }
 
@@ -1735,7 +1892,7 @@ function bindChrome() {
     if (event.target === ui.overlay) closeOverlay();
   });
   if (!api.desktop && ui.dataHint) {
-    ui.dataHint.textContent = '当前是网页预览。请在 Mac 上用 npm start 启动桌面版，复习提醒和扫描才能完整工作。';
+    ui.dataHint.textContent = '网页版可以记词和云端覆盖同步。扫描识别和系统提醒请用 Mac 桌面版。';
   }
   if (api.onStartReview) api.onStartReview(() => openReview(false));
   if (window.speechSynthesis && window.speechSynthesis.getVoices) window.speechSynthesis.getVoices();

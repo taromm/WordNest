@@ -21,6 +21,8 @@ function emptyState() {
       scanMode: 'highlight',
       ieltsExamAt: '',
       savedTags: [],
+      cloudGistId: '',
+      cloudToken: '',
     },
     books: {
       reading: { words: [] },
@@ -329,12 +331,36 @@ class Store {
       summary.existing += result.existing.length;
     }
     if (incoming && incoming.settings) {
-      this.state.settings = Object.assign({}, this.state.settings, incoming.settings, {
+      const incomingSettings = Object.assign({}, incoming.settings);
+      delete incomingSettings.cloudToken;
+      this.state.settings = Object.assign({}, this.state.settings, incomingSettings, {
         lastNotifiedAt: this.state.settings.lastNotifiedAt,
+        cloudToken: this.state.settings.cloudToken,
       });
       this.save();
     }
     return summary;
+  }
+
+  importOverwrite(incoming) {
+    const keepToken = this.state.settings.cloudToken || '';
+    const keepGist = this.state.settings.cloudGistId || '';
+    const migrated = migrate(incoming);
+    migrated.settings.cloudToken = keepToken;
+    migrated.settings.cloudGistId = keepGist || migrated.settings.cloudGistId || '';
+    this.state = migrated;
+    this.save();
+    let words = 0;
+    BOOKS.forEach((id) => {
+      words += ((((this.state.books || {})[id] || {}).words) || []).length;
+    });
+    return { words };
+  }
+
+  exportPublicState() {
+    const next = JSON.parse(JSON.stringify(this.state));
+    if (next.settings) delete next.settings.cloudToken;
+    return next;
   }
 }
 

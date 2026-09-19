@@ -38,7 +38,24 @@ npm start
 
 `git pull` 只更新程序，**不会清空单词本**。数据仍在下面「数据在哪」里写的用户目录。如果 `npm install` 没有新依赖，也可以直接 `npm start`。
 
-### 打包成可双击的 App（可选）
+## 手机网页和覆盖同步
+
+网页地址（首次推送后，到仓库 Settings → Pages 选择 GitHub Actions 作为来源）：
+
+https://taromm.github.io/WordNest/
+
+手机浏览器打开即可。扫描和系统提醒仍只有 Mac 桌面版有；记词、复习、发音、批量管理和云端覆盖可以用网页。
+
+两边共用一份**私有** GitHub Gist 里的 JSON，不会进公开源码仓库。
+
+1. 打开 [gist.github.com](https://gist.github.com)，新建 **Secret** gist。文件名填 `wordnest-data.json`，内容先写 `{}`，创建后复制地址。
+2. 打开 [GitHub Tokens](https://github.com/settings/tokens)，新建 classic token，勾选 **gist**，复制 `ghp_` 开头的令牌。只在本机保存，不要发给别人、不要提交到仓库。
+3. Mac 桌面版和手机网页都进入「设置与备份」，填同一组 Gist 和 Token，点保存。
+4. 电脑改完点 **上传覆盖云端**；手机打开后点 **下载覆盖本地**。反过来也一样。后操作的会整份覆盖先改的，不要两边同时改同一批词。
+
+Token 只存在各设备本地，上传时会从 JSON 里去掉。
+
+## 打包成可双击的 App（可选）
 
 ```bash
 npm run build:mac
@@ -98,7 +115,7 @@ npm run build:mac
 
 - 继续把数据写在 `userData`，不要写进安装目录或 asar
 - `src/store.js` 的 `migrate()` 只允许补字段、加新单词本，禁止重置 `books.*.words`
-- 导入必须走 `importMerge`，不要直接覆盖整个文件
+- 导入合并走 `importMerge`；云端同步走 `importOverwrite`，Token 不得写入 Gist
 
 ## 开发
 

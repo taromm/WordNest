@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('wordnest', {
   updateSettings: (patch) => ipcRenderer.invoke('store:updateSettings', patch),
   exportData: () => ipcRenderer.invoke('store:export'),
   importData: () => ipcRenderer.invoke('store:import'),
+  importOverwrite: (incoming) => ipcRenderer.invoke('store:importOverwrite', incoming),
+  exportPublicState: () => ipcRenderer.invoke('store:exportPublic'),
   getDataInfo: () => ipcRenderer.invoke('store:info'),
   openDataFolder: () => ipcRenderer.invoke('store:openFolder'),
   recognizeImage: (payload) => ipcRenderer.invoke('ocr:recognize', payload),

@@ -84,6 +84,26 @@ test('tagWords merges tags onto selected entries', () => {
   assert.ok(keep.tags.includes('场景词'));
 });
 
+test('importOverwrite replaces books but keeps the local cloud token', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordnest-'));
+  const store = new Store(path.join(dir, 'data.json'));
+  store.state = emptyState();
+  store.addWords('reading', [{ text: 'old' }]);
+  store.updateSettings({ cloudToken: 'secret-token', cloudGistId: 'abc123' });
+  const result = store.importOverwrite({
+    books: {
+      listening: { words: [{ text: 'new' }] },
+    },
+    settings: { cloudToken: 'from-cloud', ieltsExamAt: '2026-10-23T01:40:00.000Z' },
+  });
+  assert.equal(result.words, 1);
+  assert.equal(store.getState().books.reading.words.length, 0);
+  assert.equal(store.getState().books.listening.words[0].text, 'new');
+  assert.equal(store.getState().settings.cloudToken, 'secret-token');
+  assert.equal(store.getState().settings.cloudGistId, 'abc123');
+  assert.equal(store.exportPublicState().settings.cloudToken, undefined);
+});
+
 test('keeps a saved IELTS exam time during migrate', () => {
   const migrated = migrate({
     settings: { ieltsExamAt: '2026-12-05T01:00:00.000Z' },

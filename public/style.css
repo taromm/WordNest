@@ -509,9 +509,26 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   border-radius: 10px;
   word-break: break-all;
 }
+.settings-sub {
+  font-family: var(--serif);
+  font-size: 22px;
+  margin: 22px 0 8px;
+}
 
 @media (max-width: 960px) {
-  .desk { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .desk {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .sidebar {
+    display: flex;
+    padding: 16px;
+    gap: 12px;
+  }
+  .book-nav { display: grid; grid-template-columns: 1fr 1fr; }
+  .exam-slot { display: none; }
+  .stage { padding: 18px 16px 36px; }
+  h1 { font-size: 36px; }
   .scan-mode { grid-template-columns: 1fr; }
+  .toolbar-groups { flex-direction: column; align-items: stretch; }
 }
