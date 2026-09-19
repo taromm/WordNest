@@ -2,11 +2,15 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>词栖 · 四册单词本</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260919">
 </head>
 <body>
+  <button type="button" id="btn-menu" class="menu-btn" aria-label="打开菜单" aria-expanded="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+  <div id="menu-backdrop" class="menu-backdrop" hidden></div>
   <div class="desk">
     <aside class="sidebar">
       <div class="brand">
@@ -73,7 +77,7 @@
   </div>
   <div id="overlay" class="overlay" hidden></div>
   <script src="highlight.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260919"></script>
   <script>
     if (!window.__wordnestBooted) {
       var list = document.getElementById('word-list');

@@ -745,16 +745,17 @@ function renderList() {
   ui.list.innerHTML = words.map((word) => `
     <article class="word-card ${isDue(word) ? 'due' : ''}" data-id="${escapeHtml(word.id)}">
       <div>
-        <div class="word-en">${escapeHtml(word.text)}<span class="phonetic">${escapeHtml(word.phonetic)}</span></div>
+        <div class="word-en">${escapeHtml(word.text)}</div>
+        ${word.phonetic ? `<div class="phonetic">${escapeHtml(word.phonetic)}</div>` : ''}
         ${meaningHtml(word)}
         ${tagHtml(word)}
         ${examplePickerHtml(word)}
         <p class="meta">${isDue(word) ? '现在可复习' : '下次 ' + new Date(word.review.dueAt).toLocaleString()}</p>
       </div>
       <div class="row-actions">
-        <button type="button" class="ghost" data-act="speak">发音</button>
-        <button type="button" class="ghost" data-act="edit">编辑</button>
-        <button type="button" class="danger" data-act="delete">删除</button>
+        <button type="button" class="icon-btn ghost" data-act="speak" aria-label="发音" title="发音"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 5V4L9 9H5z" fill="currentColor"/><path d="M16.5 8.5a4.5 4.5 0 010 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        <button type="button" class="icon-btn ghost" data-act="edit" aria-label="编辑" title="编辑"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4.2L19 9.2 14.8 5 4 15.8V20z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        <button type="button" class="icon-btn danger" data-act="delete" aria-label="删除" title="删除"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2m-6 0l.8 12h6.4l.8-12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
     </article>
   `).join('');
@@ -1838,11 +1839,24 @@ async function openSettings() {
   });
 }
 
+function setMenuOpen(open) {
+  document.body.classList.toggle('menu-open', open);
+  const btn = document.getElementById('btn-menu');
+  const backdrop = document.getElementById('menu-backdrop');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (backdrop) {
+    backdrop.hidden = !open;
+    if (open) backdrop.removeAttribute('hidden');
+    else backdrop.setAttribute('hidden', '');
+  }
+}
+
 function bindChrome() {
   document.addEventListener('click', (event) => {
     const bookBtn = event.target.closest('[data-book]');
     if (bookBtn && ui.nav.contains(bookBtn)) {
       state.bookId = bookBtn.dataset.book;
+      setMenuOpen(false);
       render();
       return;
     }
@@ -1853,16 +1867,22 @@ function bindChrome() {
     }
     const button = event.target.closest('button');
     if (!button) return;
+    if (button.id === 'btn-menu') {
+      setMenuOpen(!document.body.classList.contains('menu-open'));
+      return;
+    }
     if (button.id === 'btn-add') openWordForm();
     else if (button.id === 'btn-scan') openScan();
     else if (button.id === 'btn-manage') openBatchManage();
     else if (button.id === 'btn-speak-all') openPlayer();
     else if (button.id === 'btn-dictation') openDictation();
-    else if (button.id === 'btn-exam') openExamForm();
+    else if (button.id === 'btn-exam') { setMenuOpen(false); openExamForm(); }
     else if (button.id === 'btn-review-book') openReview(true);
-    else if (button.id === 'btn-review-due') openReview(false);
-    else if (button.id === 'btn-settings') openSettings();
+    else if (button.id === 'btn-review-due') { setMenuOpen(false); openReview(false); }
+    else if (button.id === 'btn-settings') { setMenuOpen(false); openSettings(); }
   });
+  const backdrop = document.getElementById('menu-backdrop');
+  if (backdrop) backdrop.addEventListener('click', () => setMenuOpen(false));
   ui.search.addEventListener('input', () => {
     state.query = ui.search.value;
     renderList();
@@ -1878,7 +1898,10 @@ function bindChrome() {
     if (scanPasteHandler) scanPasteHandler(event);
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeOverlay();
+    if (event.key === 'Escape') {
+      closeOverlay();
+      setMenuOpen(false);
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
       event.preventDefault();
       openWordForm();
