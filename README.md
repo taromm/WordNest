@@ -40,20 +40,22 @@ npm start
 
 ## 手机网页和覆盖同步
 
-网页地址（首次推送后，到仓库 Settings → Pages 选择 GitHub Actions 作为来源）：
+手机浏览器打开（源码更新后若页面还是旧的，在链接里把 `@main` 改成最新 commit，或等几分钟）：
 
-https://taromm.github.io/WordNest/
+https://cdn.jsdelivr.net/gh/taromm/WordNest@main/public/index.html
 
-手机浏览器打开即可。扫描和系统提醒仍只有 Mac 桌面版有；记词、复习、发音、批量管理和云端覆盖可以用网页。
+扫描和系统提醒仍只有 Mac 桌面版有；记词、复习、发音、批量管理和云端覆盖可以用网页。
 
 两边共用一份**私有** GitHub Gist 里的 JSON，不会进公开源码仓库。
 
 1. 打开 [gist.github.com](https://gist.github.com)，新建 **Secret** gist。文件名填 `wordnest-data.json`，内容先写 `{}`，创建后复制地址。
 2. 打开 [GitHub Tokens](https://github.com/settings/tokens)，新建 classic token，勾选 **gist**，复制 `ghp_` 开头的令牌。只在本机保存，不要发给别人、不要提交到仓库。
-3. Mac 桌面版和手机网页都进入「设置与备份」，填同一组 Gist 和 Token，点保存。
-4. 电脑改完点 **上传覆盖云端**；手机打开后点 **下载覆盖本地**。反过来也一样。后操作的会整份覆盖先改的，不要两边同时改同一批词。
+3. Mac 桌面版先 `git pull` 再 `npm start`。电脑和手机网页都进入「设置与备份」，填同一组 Gist 和 Token，点保存。
+4. **第一次请在电脑点「上传覆盖云端」**，把现有单词传到 Gist。之后电脑改完就上传，手机打开后点「下载覆盖本地」。反过来也一样。后操作的会整份覆盖先改的，不要两边同时改同一批词。
 
 Token 只存在各设备本地，上传时会从 JSON 里去掉。
+
+若希望以后用 `https://taromm.github.io/WordNest/` 这种短地址，需要给 GitHub Token 加上 `workflow` 权限后再说一声，我可以补上自动发布。
 
 ## 打包成可双击的 App（可选）
 
