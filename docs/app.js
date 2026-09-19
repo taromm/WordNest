@@ -31,7 +31,7 @@ function emptyRendererState() {
       ttsRate: 0.92,
       ttsRepeat: 1,
       ttsGapMs: 900,
-      ttsVoiceURI: '',
+      ttsVoiceURI: 'youdao:us',
       launchAtLogin: false,
       lastNotifiedAt: null,
       highlightColor: 'auto',
@@ -103,7 +103,7 @@ function createLocalApi() {
       ttsRate: 0.92,
       ttsRepeat: 1,
       ttsGapMs: 900,
-      ttsVoiceURI: '',
+      ttsVoiceURI: 'youdao:us',
       launchAtLogin: false,
       lastNotifiedAt: null,
       highlightColor: 'auto',
@@ -509,9 +509,11 @@ function sourceWords() {
 }
 
 const TTS_ACCENTS = [
-  { id: 'lang:en-US', name: '美式英语', lang: 'en-US' },
-  { id: 'lang:en-GB', name: '英式英语', lang: 'en-GB' },
-  { id: 'lang:en-AU', name: '澳式英语', lang: 'en-AU' },
+  { id: 'youdao:us', name: '有道词典 · 美式' },
+  { id: 'youdao:uk', name: '有道词典 · 英式' },
+  { id: 'lang:en-US', name: '系统语音 · 美式' },
+  { id: 'lang:en-GB', name: '系统语音 · 英式' },
+  { id: 'lang:en-AU', name: '系统语音 · 澳式' },
 ];
 
 function ttsVoiceList() {
@@ -538,7 +540,7 @@ function englishVoices() {
 function pickTtsVoice(preferred) {
   const wanted = String(preferred != null ? preferred : (((state.data && state.data.settings) || {}).ttsVoiceURI || ''));
   const all = ttsVoiceList();
-  if (wanted && wanted.indexOf('lang:') !== 0) {
+  if (wanted && wanted.indexOf('lang:') !== 0 && wanted.indexOf('youdao:') !== 0) {
     const hit = all.find((item) => item.voiceURI === wanted || item.name === wanted);
     if (hit) return hit;
   }
@@ -551,11 +553,11 @@ function pickTtsVoice(preferred) {
 }
 
 function ttsVoiceOptionsHtml(selected) {
-  const current = String(selected || '');
+  const current = String(selected || 'youdao:us');
   const opts = TTS_ACCENTS.map((item) => `<option value="${escapeHtml(item.id)}"${item.id === current ? ' selected' : ''}>${escapeHtml(item.name)}</option>`);
   const voices = englishVoices();
   if (voices.length) {
-    opts.push('<option disabled>── 网页能用的声音 ──</option>');
+    opts.push('<option disabled>── 网页能用的系统声音 ──</option>');
     voices.forEach((item) => {
       const id = voiceKey(item);
       opts.push(`<option value="${escapeHtml(id)}"${id === current ? ' selected' : ''}>${escapeHtml(`${item.name}${item.lang ? ' · ' + item.lang : ''}`)}</option>`);
@@ -588,14 +590,31 @@ function whenVoicesReady(callback) {
   setTimeout(run, 800);
 }
 
-function speak(text, onend, voiceURI) {
+let dictAudio = null;
+
+function youdaoVoiceUrl(text, accent) {
+  const type = accent === 'uk' ? 1 : 2;
+  return `https://dict.youdao.com/dictvoice?type=${type}&audio=${encodeURIComponent(String(text || '').trim())}`;
+}
+
+function stopSpeak() {
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (!dictAudio) return;
+  dictAudio.onended = null;
+  dictAudio.onerror = null;
+  dictAudio.pause();
+  dictAudio.removeAttribute('src');
+  try { dictAudio.load(); } catch (_) { /* ignore */ }
+}
+
+function speakSystem(text, onend, voiceURI) {
   if (!window.speechSynthesis) {
     if (onend) onend();
     return;
   }
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
-  const wanted = String(voiceURI != null ? voiceURI : (((state.data && state.data.settings) || {}).ttsVoiceURI || ''));
+  const wanted = String(voiceURI || 'lang:en-US');
   if (wanted.indexOf('lang:') === 0) {
     utter.lang = wanted.slice(5) || 'en-US';
     const voice = pickTtsVoice(wanted);
@@ -614,12 +633,45 @@ function speak(text, onend, voiceURI) {
   window.speechSynthesis.speak(utter);
 }
 
+function speakYoudao(text, onend, accent) {
+  if (!dictAudio) {
+    dictAudio = new Audio();
+    dictAudio.preload = 'auto';
+    dictAudio.setAttribute('playsinline', 'true');
+  }
+  const fallback = accent === 'uk' ? 'lang:en-GB' : 'lang:en-US';
+  const rate = Number(((state.data && state.data.settings) || {}).ttsRate) || 0.92;
+  dictAudio.playbackRate = Math.min(1.2, Math.max(0.6, rate));
+  dictAudio.onended = () => { if (onend) onend(); };
+  dictAudio.onerror = () => speakSystem(text, onend, fallback);
+  dictAudio.src = youdaoVoiceUrl(text, accent);
+  const playing = dictAudio.play();
+  if (playing && playing.catch) {
+    playing.catch(() => speakSystem(text, onend, fallback));
+  }
+}
+
+function speak(text, onend, voiceURI) {
+  stopSpeak();
+  const word = String(text || '').trim();
+  if (!word) {
+    if (onend) onend();
+    return;
+  }
+  const wanted = String(voiceURI != null ? voiceURI : (((state.data && state.data.settings) || {}).ttsVoiceURI || 'youdao:us'));
+  if (wanted.indexOf('youdao:') === 0) {
+    speakYoudao(word, onend, wanted === 'youdao:uk' ? 'uk' : 'us');
+    return;
+  }
+  speakSystem(word, onend, wanted);
+}
+
 let scanPasteHandler = null;
 
 function closeOverlay() {
   state.speaking = false;
   scanPasteHandler = null;
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  stopSpeak();
   ui.overlay.classList.remove('open');
   ui.overlay.hidden = true;
   ui.overlay.setAttribute('hidden', '');
@@ -1774,7 +1826,7 @@ function openPlayer() {
     ui.overlay.querySelector('#pl-next').addEventListener('click', () => { index = Math.min(words.length - 1, index + 1); playCurrent(0); });
     ui.overlay.querySelector('#pl-pause').addEventListener('click', () => {
       paused = !paused;
-      if (paused) window.speechSynthesis.cancel();
+      if (paused) stopSpeak();
       else playCurrent(0);
       paint();
     });
@@ -1820,7 +1872,7 @@ async function openSettings() {
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button type="button" class="ghost" id="s-voice-try">试听这个声音</button>
       </div>
-      <p class="help">网页发音只能用 Safari 开放给网页的声音。iPhone 在「设置 → 辅助功能 → 朗读内容」里下载的增强语音，网页读不到，刷新也没用，这是苹果的限制。请在这里改美式 / 英式 / 澳式，点试听即可。</p>
+      <p class="help">默认用有道词典的单词录音（美式 / 英式）。没网或有道失败时，会改用系统语音。系统语音仍受 Safari 限制，手机里下载的增强语音网页用不到。</p>
       <label class="field"><span>发音语速</span>
         <input id="s-rate" type="number" min="0.6" max="1.2" step="0.02" value="${escapeHtml(s.ttsRate)}">
       </label>
@@ -1882,7 +1934,7 @@ async function openSettings() {
     await api.updateSettings({ ttsVoiceURI: uri });
   });
   ui.overlay.querySelector('#s-voice-try').addEventListener('click', () => {
-    speak('pronunciation', null, voiceSelect.value || '');
+    speak('example', null, voiceSelect.value || 'youdao:us');
   });
   ui.overlay.querySelector('#s-save').addEventListener('click', async () => {
     const minutes = Math.min(120, Math.max(60, Number(ui.overlay.querySelector('#s-min').value) || 90));
