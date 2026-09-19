@@ -31,6 +31,7 @@ function emptyRendererState() {
       ttsRate: 0.92,
       ttsRepeat: 1,
       ttsGapMs: 900,
+      ttsVoiceURI: '',
       launchAtLogin: false,
       lastNotifiedAt: null,
       highlightColor: 'auto',
@@ -102,6 +103,7 @@ function createLocalApi() {
       ttsRate: 0.92,
       ttsRepeat: 1,
       ttsGapMs: 900,
+      ttsVoiceURI: '',
       launchAtLogin: false,
       lastNotifiedAt: null,
       highlightColor: 'auto',
@@ -499,17 +501,75 @@ function sourceWords() {
   });
 }
 
-function speak(text, onend) {
+function ttsVoiceList() {
+  if (!window.speechSynthesis || !window.speechSynthesis.getVoices) return [];
+  return window.speechSynthesis.getVoices() || [];
+}
+
+function englishVoices() {
+  return ttsVoiceList().filter((item) => /^en(-|_)/i.test(item.lang) || /english/i.test(item.name));
+}
+
+function pickTtsVoice(preferred) {
+  const wanted = String(preferred != null ? preferred : (((state.data && state.data.settings) || {}).ttsVoiceURI || ''));
+  const all = ttsVoiceList();
+  if (wanted) {
+    const hit = all.find((item) => item.voiceURI === wanted || item.name === wanted);
+    if (hit) return hit;
+  }
+  return englishVoices()[0] || all.find((item) => /^en(-|_)/i.test(item.lang)) || null;
+}
+
+function ttsVoiceOptionsHtml(selected) {
+  const current = String(selected || '');
+  const voices = englishVoices();
+  const opts = [`<option value="">系统默认英文</option>`];
+  voices.forEach((item) => {
+    const id = item.voiceURI || item.name;
+    const extra = item.lang ? ` · ${item.lang}` : '';
+    opts.push(`<option value="${escapeHtml(id)}"${id === current ? ' selected' : ''}>${escapeHtml(item.name + extra)}</option>`);
+  });
+  return opts.join('');
+}
+
+function fillVoiceSelect(select, selected) {
+  if (!select) return;
+  const keep = selected != null ? selected : select.value;
+  select.innerHTML = ttsVoiceOptionsHtml(keep);
+}
+
+function whenVoicesReady(callback) {
+  if (!window.speechSynthesis) {
+    callback();
+    return;
+  }
+  if (ttsVoiceList().length) {
+    callback();
+    return;
+  }
+  const done = () => {
+    window.speechSynthesis.removeEventListener('voiceschanged', done);
+    callback();
+  };
+  window.speechSynthesis.addEventListener('voiceschanged', done);
+  window.speechSynthesis.getVoices();
+}
+
+function speak(text, onend, voiceURI) {
   if (!window.speechSynthesis) {
     if (onend) onend();
     return;
   }
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = 'en-US';
+  const voice = pickTtsVoice(voiceURI);
+  if (voice) {
+    utter.voice = voice;
+    utter.lang = voice.lang || 'en-US';
+  } else {
+    utter.lang = 'en-US';
+  }
   utter.rate = Number(((state.data && state.data.settings) || {}).ttsRate) || 0.92;
-  const voice = (window.speechSynthesis.getVoices() || []).find(item => /^en(-|_)/i.test(item.lang));
-  if (voice) utter.voice = voice;
   if (onend) utter.onend = onend;
   window.speechSynthesis.speak(utter);
 }
@@ -1714,6 +1774,13 @@ async function openSettings() {
       <label class="field"><span>提醒间隔（分钟）</span>
         <input id="s-min" type="number" min="60" max="120" value="${escapeHtml(s.reminderMinutes)}">
       </label>
+      <label class="field"><span>发音语音</span>
+        <select id="s-voice">${ttsVoiceOptionsHtml(s.ttsVoiceURI || '')}</select>
+      </label>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
+        <button type="button" class="ghost" id="s-voice-try">试听这个声音</button>
+      </div>
+      <p class="help">用的是这台设备自带的英语语音，不是词典真人录音。iPhone 可到「设置 → 辅助功能 → 朗读内容 → 声音」下载更多英文语音后，再回这里选择。</p>
       <label class="field"><span>发音语速</span>
         <input id="s-rate" type="number" min="0.6" max="1.2" step="0.02" value="${escapeHtml(s.ttsRate)}">
       </label>
@@ -1767,6 +1834,16 @@ async function openSettings() {
   ui.overlay.querySelector('#s-on').value = s.reminderEnabled ? '1' : '0';
   ui.overlay.querySelector('#s-launch').value = s.launchAtLogin ? '1' : '0';
   ui.overlay.querySelector('#s-color').value = s.highlightColor || 'auto';
+  const voiceSelect = ui.overlay.querySelector('#s-voice');
+  whenVoicesReady(() => fillVoiceSelect(voiceSelect, s.ttsVoiceURI || ''));
+  voiceSelect.addEventListener('change', async () => {
+    const uri = voiceSelect.value || '';
+    if (state.data && state.data.settings) state.data.settings.ttsVoiceURI = uri;
+    await api.updateSettings({ ttsVoiceURI: uri });
+  });
+  ui.overlay.querySelector('#s-voice-try').addEventListener('click', () => {
+    speak('pronunciation', null, voiceSelect.value || '');
+  });
   ui.overlay.querySelector('#s-save').addEventListener('click', async () => {
     const minutes = Math.min(120, Math.max(60, Number(ui.overlay.querySelector('#s-min').value) || 90));
     const gistId = parseGistId(ui.overlay.querySelector('#s-cloud-gist').value);
@@ -1775,6 +1852,7 @@ async function openSettings() {
       reminderEnabled: ui.overlay.querySelector('#s-on').value === '1',
       reminderMinutes: minutes,
       ttsRate: Number(ui.overlay.querySelector('#s-rate').value) || 0.92,
+      ttsVoiceURI: ui.overlay.querySelector('#s-voice').value || '',
       ttsRepeat: Number(ui.overlay.querySelector('#s-rep').value) || 1,
       ttsGapMs: nearestSpeakGap(ui.overlay.querySelector('#s-gap').value),
       launchAtLogin: ui.overlay.querySelector('#s-launch').value === '1',

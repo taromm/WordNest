@@ -15,6 +15,7 @@ function emptyState() {
       ttsRate: 0.92,
       ttsRepeat: 1,
       ttsGapMs: 900,
+      ttsVoiceURI: '',
       launchAtLogin: false,
       lastNotifiedAt: null,
       highlightColor: 'auto',
