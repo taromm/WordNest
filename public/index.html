@@ -36,24 +36,36 @@
         <div class="stats" id="book-stats"></div>
       </header>
       <div class="toolbar">
-        <label class="search">
-          <span>检索</span>
-          <input id="search" type="search" placeholder="按单词或释义查找">
-        </label>
-        <label class="search">
-          <span>来源书</span>
-          <select id="tag-filter">
-            <option value="">全部来源</option>
-            <option value="__untagged__">没有标记</option>
-          </select>
-        </label>
-        <div class="toolbar-actions">
-          <button type="button" id="btn-add" class="primary">打字加入</button>
-          <button type="button" id="btn-scan" class="secondary">扫描图片</button>
-          <button type="button" id="btn-manage" class="ghost">批量管理</button>
-          <button type="button" id="btn-speak-all" class="secondary" hidden>全部发音</button>
-          <button type="button" id="btn-dictation" class="ghost" hidden>听写复习</button>
-          <button type="button" id="btn-review-book" class="ghost">复习这一册</button>
+        <div class="toolbar-filters">
+          <label class="search">
+            <span>检索</span>
+            <input id="search" type="search" placeholder="按单词、释义或标签查找">
+          </label>
+          <label class="search">
+            <span>来源书</span>
+            <select id="tag-filter">
+              <option value="">全部来源</option>
+              <option value="__untagged__">没有标记</option>
+            </select>
+          </label>
+        </div>
+        <div class="toolbar-groups">
+          <div class="action-group">
+            <span class="action-label">加入</span>
+            <div class="toolbar-actions">
+              <button type="button" id="btn-add" class="primary">打字加入</button>
+              <button type="button" id="btn-scan" class="secondary">扫描图片</button>
+              <button type="button" id="btn-manage" class="ghost">批量管理</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <span class="action-label">复习</span>
+            <div class="toolbar-actions">
+              <button type="button" id="btn-review-book" class="ghost">复习这一册</button>
+              <button type="button" id="btn-dictation" class="ghost" hidden>听写复习</button>
+              <button type="button" id="btn-speak-all" class="secondary" hidden>全部发音</button>
+            </div>
+          </div>
         </div>
       </div>
       <section id="word-list" class="word-list"></section>

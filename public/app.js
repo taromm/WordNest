@@ -346,7 +346,54 @@ function tagHtml(word) {
 }
 
 function tagOptions(selected) {
-  return collectedTags().map(tag => `<option value="${escapeHtml(tag)}" ${tag === selected ? 'selected' : ''}>${escapeHtml(tag)}</option>`).join('');
+  return sourceFilterHtml(selected);
+}
+
+function tagStats(bookId) {
+  const words = ((((state.data || {}).books || {})[bookId || state.bookId] || {}).words) || [];
+  const counts = new Map();
+  let untagged = 0;
+  words.forEach((word) => {
+    const tags = wordTags(word);
+    if (!tags.length) {
+      untagged += 1;
+      return;
+    }
+    tags.forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1));
+  });
+  const names = Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, 'zh'));
+  return { total: words.length, untagged, counts, names };
+}
+
+function sourceFilterHtml(selected) {
+  const stats = tagStats();
+  const options = [
+    `<option value="" ${!selected ? 'selected' : ''}>全部来源（${stats.total}）</option>`,
+    `<option value="${UNTAGGED_FILTER}" ${selected === UNTAGGED_FILTER ? 'selected' : ''}>没有标记（${stats.untagged}）</option>`,
+  ];
+  stats.names.forEach((tag) => {
+    options.push(`<option value="${escapeHtml(tag)}" ${tag === selected ? 'selected' : ''}>${escapeHtml(tag)}（${stats.counts.get(tag) || 0}）</option>`);
+  });
+  if (selected && selected !== UNTAGGED_FILTER && !stats.counts.has(selected)) {
+    options.push(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}（0）</option>`);
+  }
+  return options.join('');
+}
+
+function sourceLabel() {
+  if (!state.tagFilter) return '全部来源';
+  if (state.tagFilter === UNTAGGED_FILTER) return '没有标记';
+  return state.tagFilter;
+}
+
+function sourceWords() {
+  const tag = state.tagFilter;
+  return currentWords().filter((word) => {
+    const tags = wordTags(word);
+    if (tag === UNTAGGED_FILTER) return !tags.length;
+    if (tag) return tags.includes(tag);
+    return true;
+  });
 }
 
 function speak(text, onend) {
@@ -400,13 +447,9 @@ function wordTags(word) {
 
 function filteredWords() {
   const q = state.query.trim().toLowerCase();
-  const tag = state.tagFilter;
-  const words = currentWords().slice().filter((word) => {
-    const tags = wordTags(word);
-    if (tag === UNTAGGED_FILTER) {
-      if (tags.length) return false;
-    } else if (tag && !tags.includes(tag)) return false;
+  const words = sourceWords().slice().filter((word) => {
     if (!q) return true;
+    const tags = wordTags(word);
     return `${word.text} ${word.meaning} ${word.ieltsMeaning || ''} ${word.otherMeanings || ''} ${word.notes} ${tags.join(' ')}`.toLowerCase().includes(q);
   });
   words.sort((a, b) => Number(isDue(b)) - Number(isDue(a)) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
@@ -579,8 +622,10 @@ function renderList() {
   ui.hint.textContent = meta.hint;
   if (ui.speakAll) ui.speakAll.hidden = !meta.speak;
   if (ui.dictation) ui.dictation.hidden = meta.id !== 'listening';
+  const scoped = sourceWords();
   ui.stats.innerHTML = `
     <div class="stat"><b>${all.length}</b><span>本册单词</span></div>
+    ${state.tagFilter ? `<div class="stat"><b>${scoped.length}</b><span>${escapeHtml(sourceLabel())}</span></div>` : ''}
     <div class="stat"><b>${dueInBook(state.bookId)}</b><span>待复习</span></div>
   `;
   if (!all.length) {
@@ -630,7 +675,7 @@ function render() {
   const filter = document.getElementById('tag-filter');
   if (filter) {
     const current = state.tagFilter;
-    filter.innerHTML = `<option value="">全部来源</option><option value="${UNTAGGED_FILTER}">没有标记</option>${tagOptions(current)}`;
+    filter.innerHTML = sourceFilterHtml(current);
     filter.value = current;
   }
 }
@@ -927,11 +972,17 @@ function openBatchManage() {
   let all = currentWords().slice().sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }));
   const selected = new Set();
   let query = '';
+  let tagFilter = state.tagFilter || '';
 
   function visibleWords() {
     const q = query.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter(word => `${word.text} ${word.ieltsMeaning || ''} ${word.meaning || ''} ${word.otherMeanings || ''} ${wordTags(word).join(' ')}`.toLowerCase().includes(q));
+    return all.filter((word) => {
+      const tags = wordTags(word);
+      if (tagFilter === UNTAGGED_FILTER && tags.length) return false;
+      if (tagFilter && tagFilter !== UNTAGGED_FILTER && !tags.includes(tagFilter)) return false;
+      if (!q) return true;
+      return `${word.text} ${word.ieltsMeaning || ''} ${word.meaning || ''} ${word.otherMeanings || ''} ${tags.join(' ')}`.toLowerCase().includes(q);
+    });
   }
 
   function setStatus(text) {
@@ -958,22 +1009,26 @@ function openBatchManage() {
         </label>`;
       }).join('');
     }
-    if (count) count.textContent = `已选 ${selected.size} / 本册 ${all.length}`;
+    if (count) count.textContent = `已选 ${selected.size} / 当前 ${shown.length}`;
   }
 
   function updateCount() {
     const count = ui.overlay.querySelector('#manage-count');
-    if (count) count.textContent = `已选 ${selected.size} / 本册 ${all.length}`;
+    if (count) count.textContent = `已选 ${selected.size} / 当前 ${visibleWords().length}`;
   }
 
   openOverlay(`
     <div class="modal">
       <h2>批量管理</h2>
-      <p class="help">勾选当前「${meta.name}」里的词条，可以加标签或删除。加标签会并到已有来源上，不会覆盖；只动本册。</p>
+      <p class="help">勾选当前「${meta.name}」里的词条，可以加标签或删除。加标签会并到已有来源上，不会覆盖；只动本册。检索可以按单词、释义或标签。</p>
       <div class="manage-toolbar">
         <label class="search">
           <span>检索</span>
-          <input id="manage-search" type="search" placeholder="按单词或释义筛选">
+          <input id="manage-search" type="search" placeholder="按单词、释义或标签筛选">
+        </label>
+        <label class="search">
+          <span>来源书</span>
+          <select id="manage-source">${sourceFilterHtml(tagFilter)}</select>
         </label>
         <button type="button" class="ghost" id="manage-all">全选当前列表</button>
         <button type="button" class="ghost" id="manage-none">取消全选</button>
@@ -998,6 +1053,10 @@ function openBatchManage() {
   paintList();
   ui.overlay.querySelector('#manage-search').addEventListener('input', (event) => {
     query = event.target.value;
+    paintList();
+  });
+  ui.overlay.querySelector('#manage-source').addEventListener('change', (event) => {
+    tagFilter = event.target.value;
     paintList();
   });
   ui.overlay.querySelector('#manage-list').addEventListener('change', (event) => {
@@ -1029,6 +1088,11 @@ function openBatchManage() {
     const updated = await tagSelectedWords(state.bookId, ids, tag);
     await reload();
     all = currentWords().slice().sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }));
+    const source = ui.overlay.querySelector('#manage-source');
+    if (source) {
+      source.innerHTML = sourceFilterHtml(tagFilter);
+      source.value = tagFilter;
+    }
     paintList();
     setStatus(`已给 ${updated} 个词加上「${tag}」。`);
   });
@@ -1440,8 +1504,12 @@ function speakGapOptionsHtml(selected) {
 }
 
 function openPlayer() {
-  const words = currentWords();
-  if (!words.length) return;
+  const words = sourceWords().slice().sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const label = sourceLabel();
+  if (!words.length) {
+    openOverlay(`<div class="modal"><h2>没有可发音的单词</h2><p class="help">当前来源「${escapeHtml(label)}」没有词条。可先改到来源书，或给单词加上对应标签。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    return;
+  }
   let index = 0;
   let paused = false;
   state.speaking = true;
@@ -1460,7 +1528,7 @@ function openPlayer() {
     openOverlay(`
       <div class="modal">
         <div class="player-card">
-          <p class="progress">全部发音 · ${index + 1} / ${words.length}</p>
+          <p class="progress">全部发音 · ${escapeHtml(label)} · ${index + 1} / ${words.length}</p>
           <div class="player-word">${escapeHtml(word.text)}</div>
           <div class="phonetic">${escapeHtml(word.phonetic)}</div>
           ${meaningHtml(word)}
@@ -1501,7 +1569,7 @@ function openPlayer() {
       }
       if (index + 1 >= words.length) {
         state.speaking = false;
-        openOverlay(`<div class="modal"><h2>播放完成</h2><p class="help">本册 ${words.length} 个单词已经全部读完。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+        openOverlay(`<div class="modal"><h2>播放完成</h2><p class="help">「${escapeHtml(label)}」共 ${words.length} 个单词已经全部读完。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
         return;
       }
       index += 1;
