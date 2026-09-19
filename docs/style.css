@@ -576,6 +576,7 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   body.menu-open { overflow: hidden; }
   .desk {
     grid-template-columns: 1fr;
+    z-index: auto;
   }
   .menu-btn {
     display: grid;
@@ -583,20 +584,27 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     top: max(12px, env(safe-area-inset-top));
     left: max(12px, env(safe-area-inset-left));
     background: rgba(255,255,255,.88);
+    z-index: 45;
   }
   .menu-backdrop[hidden] { display: none; }
-  body.menu-open .menu-backdrop { display: block; }
+  body.menu-open .menu-backdrop {
+    display: block;
+    left: min(320px, 88vw);
+    z-index: 30;
+    pointer-events: auto;
+  }
   .sidebar {
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
     width: min(320px, 88vw);
-    z-index: 32;
+    z-index: 40;
+    pointer-events: auto;
     transform: translateX(-110%);
     transition: transform .2s ease;
     overflow: auto;
-    padding: 18px 16px 24px;
+    padding: 64px 16px 24px;
     gap: 14px;
     border-right: 0;
     box-shadow: 12px 0 40px rgba(36, 28, 22, .28);
