@@ -725,10 +725,8 @@ function renderList() {
   ui.hint.textContent = meta.hint;
   if (ui.speakAll) ui.speakAll.hidden = !meta.speak;
   if (ui.dictation) ui.dictation.hidden = meta.id !== 'listening';
-  const scoped = sourceWords();
   ui.stats.innerHTML = `
     <div class="stat"><b>${all.length}</b><span>本册单词</span></div>
-    ${state.tagFilter ? `<div class="stat"><b>${scoped.length}</b><span>${escapeHtml(sourceLabel())}</span></div>` : ''}
     <div class="stat"><b>${dueInBook(state.bookId)}</b><span>待复习</span></div>
   `;
   if (!all.length) {

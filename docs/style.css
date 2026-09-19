@@ -575,13 +575,15 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
 
 @media (max-width: 960px) {
   html, body {
-    overflow-x: hidden;
+    height: 100%;
+    overflow: hidden;
     max-width: 100%;
   }
   body.menu-open { overflow: hidden; }
   .desk {
     display: block;
     width: 100%;
+    height: 100%;
     max-width: 100%;
     min-width: 0;
     overflow: hidden;
@@ -624,10 +626,12 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   .exam-slot { flex: 0 0 auto; min-height: 0; }
   .stage {
     width: 100%;
+    height: 100%;
     max-width: 100%;
     min-width: 0;
     overflow-x: hidden;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 16px 14px 40px;
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
@@ -645,21 +649,17 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     max-width: 100%;
   }
   .topbar {
-    display: grid;
-    grid-template-columns: 46px minmax(0, 1fr);
-    grid-template-areas:
-      "menu title"
-      "stats stats";
-    gap: 8px 12px;
-    align-items: start;
-    padding: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 10px;
+    padding: 0 0 0 46px;
   }
-  .topbar-title { grid-area: title; }
+  .topbar-title { min-width: 0; flex: 1; }
   .stats {
-    grid-area: stats;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    display: flex;
+    flex: none;
+    gap: 12px;
   }
   .stat { min-width: 0; }
   .stat b { font-size: 22px; }
