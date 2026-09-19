@@ -1030,22 +1030,30 @@ function openBatchManage() {
           <span>来源书</span>
           <select id="manage-source">${sourceFilterHtml(tagFilter)}</select>
         </label>
-        <button type="button" class="ghost" id="manage-all">全选当前列表</button>
-        <button type="button" class="ghost" id="manage-none">取消全选</button>
-        <span class="manage-count" id="manage-count"></span>
+        <div class="manage-toolbar-actions">
+          <button type="button" class="ghost" id="manage-all">全选当前列表</button>
+          <button type="button" class="ghost" id="manage-none">取消全选</button>
+          <span class="manage-count" id="manage-count"></span>
+        </div>
       </div>
       <div class="manage-tagbar">
         <label class="search">
-          <span>加标签</span>
-          <input id="manage-tag" list="manage-tag-list" placeholder="例如：场景词、剑雅 21">
-          <datalist id="manage-tag-list">${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+          <span>已有标签</span>
+          <select id="manage-tag-pick">
+            <option value="">选择已有标签</option>
+            ${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`).join('')}
+          </select>
         </label>
-        <button type="button" class="secondary" id="manage-tag-add">给所选加标签</button>
+        <label class="search">
+          <span>或输入新标签</span>
+          <input id="manage-tag" placeholder="例如：场景词、剑雅 21">
+        </label>
       </div>
       <p class="help" id="manage-status"></p>
       <div class="manage-list" id="manage-list"></div>
       <div class="modal-actions">
         <button type="button" class="ghost" data-close>关闭</button>
+        <button type="button" class="primary" id="manage-tag-add">确认加标签</button>
         <button type="button" class="danger" id="manage-delete">删除所选</button>
       </div>
     </div>
@@ -1074,15 +1082,20 @@ function openBatchManage() {
     selected.clear();
     paintList();
   });
-  ui.overlay.querySelector('#manage-tag-add').addEventListener('click', async () => {
+  function chosenTag() {
+    const typed = (ui.overlay.querySelector('#manage-tag').value || '').trim();
+    const picked = (ui.overlay.querySelector('#manage-tag-pick').value || '').trim();
+    return typed || picked;
+  }
+  async function applyTags() {
     const ids = Array.from(selected);
-    const tag = (ui.overlay.querySelector('#manage-tag').value || '').trim();
+    const tag = chosenTag();
     if (!ids.length) {
       setStatus('请先勾选要加标签的词条。');
       return;
     }
     if (!tag) {
-      setStatus('请填写要加上的标签，例如：场景词。');
+      setStatus('请选择已有标签，或在右侧输入新标签，再点确认。');
       return;
     }
     const updated = await tagSelectedWords(state.bookId, ids, tag);
@@ -1095,6 +1108,13 @@ function openBatchManage() {
     }
     paintList();
     setStatus(`已给 ${updated} 个词加上「${tag}」。`);
+  }
+  ui.overlay.querySelector('#manage-tag-add').addEventListener('click', applyTags);
+  ui.overlay.querySelector('#manage-tag').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applyTags();
+    }
   });
   ui.overlay.querySelector('#manage-delete').addEventListener('click', async () => {
     const ids = Array.from(selected);

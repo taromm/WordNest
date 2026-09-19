@@ -389,22 +389,43 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
 .check-row input { accent-color: var(--ink); }
 .batch-input { min-height: 180px; resize: vertical; line-height: 1.55; }
 .manage-toolbar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: end;
   margin-top: 12px;
 }
-.manage-toolbar .search { flex: 1; min-width: 180px; }
-.manage-tagbar {
+.manage-toolbar .search,
+.manage-tagbar .search {
+  min-width: 0;
+  width: auto;
+  flex: none;
+}
+.modal .search input,
+.modal .search select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.manage-toolbar-actions {
+  grid-column: 1 / -1;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
+}
+.manage-tagbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: end;
   margin-top: 10px;
 }
-.manage-tagbar .search { flex: 1; min-width: 200px; }
-.manage-count { font-size: 13px; color: var(--mute); margin-left: auto; padding-bottom: 8px; }
+.manage-count {
+  font-size: 13px;
+  color: var(--mute);
+  margin-left: auto;
+}
 .manage-list {
   margin-top: 12px;
   max-height: min(52vh, 460px);
