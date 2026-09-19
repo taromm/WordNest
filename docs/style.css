@@ -681,20 +681,21 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     max-width: 100%;
     min-width: 0;
   }
-  .toolbar-groups { gap: 12px; align-items: stretch; }
+  .toolbar-groups { gap: 12px; align-items: stretch; flex-direction: column; }
   .toolbar-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 6px;
   }
   .toolbar-actions button[hidden] { display: none !important; }
   .toolbar-actions button {
-    flex: 1 1 140px;
+    flex: 1 1 0;
     width: auto;
     min-width: 0;
     text-align: center;
-    padding: 10px 8px;
-    font-size: 14px;
+    padding: 10px 6px;
+    font-size: 13px;
+    white-space: nowrap;
   }
   .scan-mode { grid-template-columns: 1fr; }
   .grid-2,
