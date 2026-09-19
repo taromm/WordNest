@@ -6,15 +6,37 @@
 
 ## 在 Mac 上运行
 
-需要 [Node.js 18+](https://nodejs.org/)（建议 20）。把 `zym_cv/wordnest` 整个文件夹拷到 Mac 后：
+需要 [Node.js 18+](https://nodejs.org/)（建议 20）。源码在 GitHub：[taromm/WordNest](https://github.com/taromm/WordNest)。
+
+第一次在 Mac 上：
 
 ```bash
-cd wordnest
+git clone https://github.com/taromm/WordNest.git
+cd WordNest
 npm install
 npm start
 ```
 
+如果 `git clone` / `git pull` 要登录，不要填 GitHub 网站密码（已经不能用来推拉代码）。用 [Personal Access Token](https://github.com/settings/tokens) 当密码，或在 GitHub 账号里加上这台电脑的 SSH 公钥后改用：
+
+```bash
+git clone git@github.com:taromm/WordNest.git
+```
+
 首次启动会打开「词栖」窗口，菜单栏也会留下托盘图标。关闭窗口不会退出，方便到点提醒；要退出请用托盘菜单里的「退出」，或 Dock 图标右键退出。
+
+### 以后更新
+
+不要再往旧的 `.app` 里逐个替换源码。在已经 clone 过的目录里：
+
+```bash
+cd WordNest
+git pull
+npm install
+npm start
+```
+
+`git pull` 只更新程序，**不会清空单词本**。数据仍在下面「数据在哪」里写的用户目录。如果 `npm install` 没有新依赖，也可以直接 `npm start`。
 
 ### 打包成可双击的 App（可选）
 
@@ -68,7 +90,7 @@ npm run build:mac
 | 上一次完好备份 | 同目录 `wordnest-data.json.bak` |
 | OCR 模型缓存 | 同目录 `tessdata/` |
 
-软件更新只替换 App 本身，不会写进这份用户数据。内部升级格式时也只补新字段，**不会清空四本单词本**。
+`git pull`、重新 `npm start` 或换安装包，都只替换程序，不会写进这份用户数据。内部升级格式时也只补新字段，**不会清空四本单词本**。
 
 建议偶尔在「设置与备份」里导出一份 JSON。导入是**合并**：同册同词保留原记录，只追加新词，不会覆盖记忆。
 
