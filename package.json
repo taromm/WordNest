@@ -14,7 +14,8 @@
     "icon": "python3 scripts/generate-icon.py",
     "check": "node --check electron-main.js && node --check preload.js && node --check src/store.js && node --check src/extract-markers.js && node --check src/ocr.js && node --check src/dictionary.js && node --check public/app.js && node --check public/highlight.js",
     "verify": "node scripts/verify.js",
-    "test": "node --test"
+    "test": "node --test",
+    "sync-docs": "rm -rf docs && mkdir docs && cp -a public/. docs/"
   },
   "engines": {
     "node": ">=18"

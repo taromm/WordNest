@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>词栖 · 四册单词本</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="desk">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">词</div>
+        <div>
+          <strong>词栖</strong>
+          <span>四册单词本</span>
+        </div>
+      </div>
+      <nav id="book-nav" class="book-nav"></nav>
+      <div class="exam-slot">
+        <button type="button" id="btn-exam" class="exam-card empty"></button>
+      </div>
+      <div class="sidebar-actions">
+        <button type="button" id="btn-review-due" class="ghost">复习到期单词</button>
+        <button type="button" id="btn-settings" class="ghost">设置与备份</button>
+      </div>
+      <p class="data-hint" id="data-hint">单词保存在本机用户目录，更新软件不会清空。</p>
+    </aside>
+    <main class="stage">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="book-en">Reading</p>
+          <h1 id="book-title">阅读</h1>
+          <p class="lede" id="book-hint">篇章里遇见的词</p>
+        </div>
+        <div class="stats" id="book-stats"></div>
+      </header>
+      <div class="toolbar">
+        <div class="toolbar-filters">
+          <label class="search">
+            <span>检索</span>
+            <input id="search" type="search" placeholder="按单词、释义或标签查找">
+          </label>
+          <label class="search">
+            <span>来源书</span>
+            <select id="tag-filter">
+              <option value="">全部来源</option>
+              <option value="__untagged__">没有标记</option>
+            </select>
+          </label>
+        </div>
+        <div class="toolbar-groups">
+          <div class="action-group">
+            <span class="action-label">加入</span>
+            <div class="toolbar-actions">
+              <button type="button" id="btn-add" class="primary">打字加入</button>
+              <button type="button" id="btn-scan" class="secondary">扫描图片</button>
+              <button type="button" id="btn-manage" class="ghost">批量管理</button>
+            </div>
+          </div>
+          <div class="action-group">
+            <span class="action-label">复习</span>
+            <div class="toolbar-actions">
+              <button type="button" id="btn-review-book" class="ghost">复习这一册</button>
+              <button type="button" id="btn-dictation" class="ghost" hidden>听写复习</button>
+              <button type="button" id="btn-speak-all" class="secondary" hidden>全部发音</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <section id="word-list" class="word-list"></section>
+    </main>
+  </div>
+  <div id="overlay" class="overlay" hidden></div>
+  <script src="highlight.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if (!window.__wordnestBooted) {
+      var list = document.getElementById('word-list');
+      if (list) list.innerHTML = '<article class="empty-card"><h2>界面脚本没有加载</h2><p>请完全退出词栖后，在项目目录运行 npm start。</p></article>';
+    }
+  </script>
+</body>
+</html>

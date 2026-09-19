@@ -40,11 +40,13 @@ npm start
 
 ## 手机网页和覆盖同步
 
-手机浏览器打开（源码更新后若页面还是旧的，在链接里把 `@main` 改成最新 commit，或等几分钟）：
+jsDelivr **不能**当词栖网页用：它会把 `index.html` 转去 GitHub Raw，Safari 只会显示源码。请改用 GitHub Pages。
 
-https://cdn.jsdelivr.net/gh/taromm/WordNest@main/public/index.html
+先到仓库 [Settings → Pages](https://github.com/taromm/WordNest/settings/pages)：Source 选 **Deploy from a branch**，Branch 选 **main**，Folder 选 **/docs**，保存。一两分钟后打开：
 
-扫描和系统提醒仍只有 Mac 桌面版有；记词、复习、发音、批量管理和云端覆盖可以用网页。
+https://taromm.github.io/WordNest/
+
+扫描和系统提醒仍只有 Mac 桌面版有；记词、复习、发音、批量管理和云端覆盖可以用网页。手机访问 GitHub Pages 在国内有时仍要梯子。
 
 两边共用一份**私有** GitHub Gist 里的 JSON，不会进公开源码仓库。
 
@@ -55,7 +57,7 @@ https://cdn.jsdelivr.net/gh/taromm/WordNest@main/public/index.html
 
 Token 只存在各设备本地，上传时会从 JSON 里去掉。
 
-若希望以后用 `https://taromm.github.io/WordNest/` 这种短地址，需要给 GitHub Token 加上 `workflow` 权限后再说一声，我可以补上自动发布。
+若希望以后用自动发布、不必每次同步 `docs/`，需要给 GitHub Token 加上 `workflow` 权限后再说一声。
 
 ## 打包成可双击的 App（可选）
 
