@@ -384,6 +384,14 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   margin-top: 12px;
 }
 .manage-toolbar .search { flex: 1; min-width: 180px; }
+.manage-tagbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-top: 10px;
+}
+.manage-tagbar .search { flex: 1; min-width: 200px; }
 .manage-count { font-size: 13px; color: var(--mute); margin-left: auto; padding-bottom: 8px; }
 .manage-list {
   margin-top: 12px;

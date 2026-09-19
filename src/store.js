@@ -290,6 +290,26 @@ class Store {
     return { deleted, state: this.state };
   }
 
+  tagWords(bookId, ids, tags) {
+    const book = this.state.books[bookId];
+    if (!book) throw new Error('未知单词本');
+    const extra = normalizeTags(tags);
+    if (!extra.length) return { updated: 0, state: this.state };
+    const idSet = new Set((ids || []).map(item => String(item)));
+    let updated = 0;
+    book.words.forEach((word) => {
+      if (!idSet.has(word.id)) return;
+      word.tags = normalizeTags([].concat(word.tags || [], extra));
+      word.updatedAt = nowIso();
+      updated += 1;
+    });
+    if (updated) {
+      rememberTags(this.state, extra);
+      this.save();
+    }
+    return { updated, state: this.state };
+  }
+
   reviewWord(bookId, id, rating) {
     const book = this.state.books[bookId];
     if (!book) throw new Error('未知单词本');

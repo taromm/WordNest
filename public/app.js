@@ -55,6 +55,8 @@ const state = {
   speaking: false,
 };
 
+const UNTAGGED_FILTER = '__untagged__';
+
 const COLOR_LABELS = {
   auto: '橙色 / 黄 / 绿荧光笔',
   orange: '橙色荧光笔',
@@ -173,6 +175,30 @@ function createLocalApi() {
       const remove = new Set((ids || []).map(item => String(item)));
       data.books[bookId].words = data.books[bookId].words.filter(item => !remove.has(item.id));
       return save(data);
+    },
+    async tagWords(bookId, ids, tags) {
+      const data = load();
+      const extra = [].concat(tags || []).map(item => String(item || '').trim()).filter(Boolean);
+      const idSet = new Set((ids || []).map(item => String(item)));
+      let updated = 0;
+      (data.books[bookId].words || []).forEach((word) => {
+        if (!idSet.has(word.id)) return;
+        const merged = [];
+        const seen = new Set();
+        [].concat(word.tags || [], extra).forEach((tag) => {
+          const value = String(tag || '').trim();
+          if (!value) return;
+          const key = value.toLowerCase();
+          if (seen.has(key)) return;
+          seen.add(key);
+          merged.push(value);
+        });
+        word.tags = merged;
+        word.updatedAt = new Date().toISOString();
+        updated += 1;
+      });
+      save(data);
+      return { updated };
     },
     async reviewWord(bookId, id, rating) {
       const data = load();
@@ -368,13 +394,20 @@ function bookWordKeys(bookId) {
   return new Set(words.map(word => String(word.text || '').trim().toLowerCase()).filter(Boolean));
 }
 
+function wordTags(word) {
+  return (word && word.tags ? word.tags : []).map(tag => String(tag || '').trim()).filter(Boolean);
+}
+
 function filteredWords() {
   const q = state.query.trim().toLowerCase();
   const tag = state.tagFilter;
   const words = currentWords().slice().filter((word) => {
-    if (tag && !(word.tags || []).includes(tag)) return false;
+    const tags = wordTags(word);
+    if (tag === UNTAGGED_FILTER) {
+      if (tags.length) return false;
+    } else if (tag && !tags.includes(tag)) return false;
     if (!q) return true;
-    return `${word.text} ${word.meaning} ${word.ieltsMeaning || ''} ${word.otherMeanings || ''} ${word.notes} ${(word.tags || []).join(' ')}`.toLowerCase().includes(q);
+    return `${word.text} ${word.meaning} ${word.ieltsMeaning || ''} ${word.otherMeanings || ''} ${word.notes} ${tags.join(' ')}`.toLowerCase().includes(q);
   });
   words.sort((a, b) => Number(isDue(b)) - Number(isDue(a)) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
   return words;
@@ -597,7 +630,7 @@ function render() {
   const filter = document.getElementById('tag-filter');
   if (filter) {
     const current = state.tagFilter;
-    filter.innerHTML = `<option value="">全部来源</option>${tagOptions(current)}`;
+    filter.innerHTML = `<option value="">全部来源</option><option value="${UNTAGGED_FILTER}">没有标记</option>${tagOptions(current)}`;
     filter.value = current;
   }
 }
@@ -658,6 +691,21 @@ async function deleteSelectedWords(bookId, ids) {
     return (result && result.deleted) || list.length;
   }
   for (const id of list) await api.deleteWord(bookId, id);
+  return list.length;
+}
+
+async function tagSelectedWords(bookId, ids, tags) {
+  const list = (ids || []).map(item => String(item)).filter(Boolean);
+  const extra = String(tags || '').split(/[,，、;；]+/).map(item => item.trim()).filter(Boolean);
+  if (!list.length || !extra.length) return 0;
+  if (api.tagWords) {
+    const result = await api.tagWords(bookId, list, extra);
+    return (result && result.updated) || list.length;
+  }
+  for (const id of list) {
+    const word = currentWords().find(item => item.id === id) || {};
+    await api.updateWord(bookId, id, { tags: Array.from(new Set(wordTags(word).concat(extra))) });
+  }
   return list.length;
 }
 
@@ -876,14 +924,19 @@ function openWordForm(existing, startMode) {
 
 function openBatchManage() {
   const meta = bookMeta(state.bookId);
-  const all = currentWords().slice().sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }));
+  let all = currentWords().slice().sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }));
   const selected = new Set();
   let query = '';
 
   function visibleWords() {
     const q = query.trim().toLowerCase();
     if (!q) return all;
-    return all.filter(word => `${word.text} ${word.ieltsMeaning || ''} ${word.meaning || ''} ${word.otherMeanings || ''} ${(word.tags || []).join(' ')}`.toLowerCase().includes(q));
+    return all.filter(word => `${word.text} ${word.ieltsMeaning || ''} ${word.meaning || ''} ${word.otherMeanings || ''} ${wordTags(word).join(' ')}`.toLowerCase().includes(q));
+  }
+
+  function setStatus(text) {
+    const status = ui.overlay.querySelector('#manage-status');
+    if (status) status.textContent = text || '';
   }
 
   function paintList() {
@@ -891,15 +944,17 @@ function openBatchManage() {
     const count = ui.overlay.querySelector('#manage-count');
     const shown = visibleWords();
     if (!all.length) {
-      list.innerHTML = '<article class="empty-card"><h2>这一册还是空白</h2><p>没有可删除的词条。</p></article>';
+      list.innerHTML = '<article class="empty-card"><h2>这一册还是空白</h2><p>没有可管理的词条。</p></article>';
     } else if (!shown.length) {
       list.innerHTML = '<article class="empty-card"><h2>没有匹配的单词</h2><p>试试别的检索词。</p></article>';
     } else {
       list.innerHTML = shown.map((word) => {
         const snippet = wordSnippet(word);
+        const tags = wordTags(word);
+        const extra = [snippet, tags.length ? tags.join('、') : '没有标记'].filter(Boolean).join(' · ');
         return `<label class="manage-row">
           <input type="checkbox" data-id="${escapeHtml(word.id)}" ${selected.has(word.id) ? 'checked' : ''}>
-          <span><b>${escapeHtml(word.text)}</b>${snippet ? `<small>${escapeHtml(snippet)}</small>` : ''}</span>
+          <span><b>${escapeHtml(word.text)}</b>${extra ? `<small>${escapeHtml(extra)}</small>` : ''}</span>
         </label>`;
       }).join('');
     }
@@ -914,7 +969,7 @@ function openBatchManage() {
   openOverlay(`
     <div class="modal">
       <h2>批量管理</h2>
-      <p class="help">勾选当前「${meta.name}」里要删掉的词条，确认后会从本册删除，不会动其他三册。</p>
+      <p class="help">勾选当前「${meta.name}」里的词条，可以加标签或删除。加标签会并到已有来源上，不会覆盖；只动本册。</p>
       <div class="manage-toolbar">
         <label class="search">
           <span>检索</span>
@@ -924,6 +979,15 @@ function openBatchManage() {
         <button type="button" class="ghost" id="manage-none">取消全选</button>
         <span class="manage-count" id="manage-count"></span>
       </div>
+      <div class="manage-tagbar">
+        <label class="search">
+          <span>加标签</span>
+          <input id="manage-tag" list="manage-tag-list" placeholder="例如：场景词、剑雅 21">
+          <datalist id="manage-tag-list">${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
+        </label>
+        <button type="button" class="secondary" id="manage-tag-add">给所选加标签</button>
+      </div>
+      <p class="help" id="manage-status"></p>
       <div class="manage-list" id="manage-list"></div>
       <div class="modal-actions">
         <button type="button" class="ghost" data-close>关闭</button>
@@ -950,6 +1014,23 @@ function openBatchManage() {
   ui.overlay.querySelector('#manage-none').addEventListener('click', () => {
     selected.clear();
     paintList();
+  });
+  ui.overlay.querySelector('#manage-tag-add').addEventListener('click', async () => {
+    const ids = Array.from(selected);
+    const tag = (ui.overlay.querySelector('#manage-tag').value || '').trim();
+    if (!ids.length) {
+      setStatus('请先勾选要加标签的词条。');
+      return;
+    }
+    if (!tag) {
+      setStatus('请填写要加上的标签，例如：场景词。');
+      return;
+    }
+    const updated = await tagSelectedWords(state.bookId, ids, tag);
+    await reload();
+    all = currentWords().slice().sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }));
+    paintList();
+    setStatus(`已给 ${updated} 个词加上「${tag}」。`);
   });
   ui.overlay.querySelector('#manage-delete').addEventListener('click', async () => {
     const ids = Array.from(selected);

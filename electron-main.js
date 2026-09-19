@@ -181,6 +181,7 @@ function registerIpc() {
   ipcMain.handle('store:updateWord', (_, { bookId, id, patch }) => store.updateWord(bookId, id, patch));
   ipcMain.handle('store:deleteWord', (_, { bookId, id }) => store.deleteWord(bookId, id));
   ipcMain.handle('store:deleteWords', (_, { bookId, ids }) => store.deleteWords(bookId, ids));
+  ipcMain.handle('store:tagWords', (_, { bookId, ids, tags }) => store.tagWords(bookId, ids, tags));
   ipcMain.handle('store:reviewWord', (_, { bookId, id, rating }) => store.reviewWord(bookId, id, rating));
   ipcMain.handle('store:updateSettings', (_, patch) => {
     const state = store.updateSettings(patch);

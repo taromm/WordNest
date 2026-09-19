@@ -69,6 +69,21 @@ test('deleteWords removes only the selected entries', () => {
   assert.equal(store.getState().books.reading.words[0].text, 'keep');
 });
 
+test('tagWords merges tags onto selected entries', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordnest-'));
+  const store = new Store(path.join(dir, 'data.json'));
+  store.state = emptyState();
+  store.addWords('listening', [{ text: 'passport' }, { text: 'keep', tags: ['剑雅 21'] }]);
+  const ids = store.getState().books.listening.words.map(word => word.id);
+  const result = store.tagWords('listening', ids, ['场景词']);
+  assert.equal(result.updated, 2);
+  const passport = store.getState().books.listening.words.find(word => word.text === 'passport');
+  const keep = store.getState().books.listening.words.find(word => word.text === 'keep');
+  assert.deepEqual(passport.tags, ['场景词']);
+  assert.ok(keep.tags.includes('剑雅 21'));
+  assert.ok(keep.tags.includes('场景词'));
+});
+
 test('keeps a saved IELTS exam time during migrate', () => {
   const migrated = migrate({
     settings: { ieltsExamAt: '2026-12-05T01:00:00.000Z' },
