@@ -121,8 +121,15 @@ function createLocalApi() {
   };
 
   function load() {
-    try { return Object.assign(empty, JSON.parse(localStorage.getItem(key) || 'null') || empty); }
-    catch (_) { return empty; }
+    const base = JSON.parse(JSON.stringify(empty));
+    try {
+      const raw = JSON.parse(localStorage.getItem(key) || 'null');
+      if (!raw || typeof raw !== 'object') return base;
+      raw.settings = Object.assign({}, base.settings, raw.settings || {});
+      return Object.assign(base, raw, { settings: raw.settings });
+    } catch (_) {
+      return base;
+    }
   }
   function save(data) {
     localStorage.setItem(key, JSON.stringify(data));
@@ -501,34 +508,59 @@ function sourceWords() {
   });
 }
 
+const TTS_ACCENTS = [
+  { id: 'lang:en-US', name: '美式英语', lang: 'en-US' },
+  { id: 'lang:en-GB', name: '英式英语', lang: 'en-GB' },
+  { id: 'lang:en-AU', name: '澳式英语', lang: 'en-AU' },
+];
+
 function ttsVoiceList() {
   if (!window.speechSynthesis || !window.speechSynthesis.getVoices) return [];
   return window.speechSynthesis.getVoices() || [];
 }
 
+function voiceKey(item) {
+  return (item && (item.voiceURI || item.name)) || '';
+}
+
 function englishVoices() {
-  return ttsVoiceList().filter((item) => /^en(-|_)/i.test(item.lang) || /english/i.test(item.name));
+  const seen = new Set();
+  return ttsVoiceList().filter((item) => {
+    if (!item) return false;
+    if (!(/^en(-|_)/i.test(item.lang || '') || /english/i.test(item.name || ''))) return false;
+    const key = voiceKey(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function pickTtsVoice(preferred) {
   const wanted = String(preferred != null ? preferred : (((state.data && state.data.settings) || {}).ttsVoiceURI || ''));
   const all = ttsVoiceList();
-  if (wanted) {
+  if (wanted && wanted.indexOf('lang:') !== 0) {
     const hit = all.find((item) => item.voiceURI === wanted || item.name === wanted);
     if (hit) return hit;
   }
-  return englishVoices()[0] || all.find((item) => /^en(-|_)/i.test(item.lang)) || null;
+  if (wanted.indexOf('lang:') === 0) {
+    const lang = wanted.slice(5).toLowerCase();
+    const hit = englishVoices().find((item) => String(item.lang || '').replace('_', '-').toLowerCase().indexOf(lang) === 0);
+    if (hit) return hit;
+  }
+  return englishVoices()[0] || all.find((item) => /^en(-|_)/i.test(item.lang || '')) || null;
 }
 
 function ttsVoiceOptionsHtml(selected) {
   const current = String(selected || '');
+  const opts = TTS_ACCENTS.map((item) => `<option value="${escapeHtml(item.id)}"${item.id === current ? ' selected' : ''}>${escapeHtml(item.name)}</option>`);
   const voices = englishVoices();
-  const opts = [`<option value="">系统默认英文</option>`];
-  voices.forEach((item) => {
-    const id = item.voiceURI || item.name;
-    const extra = item.lang ? ` · ${item.lang}` : '';
-    opts.push(`<option value="${escapeHtml(id)}"${id === current ? ' selected' : ''}>${escapeHtml(item.name + extra)}</option>`);
-  });
+  if (voices.length) {
+    opts.push('<option disabled>── 网页能用的声音 ──</option>');
+    voices.forEach((item) => {
+      const id = voiceKey(item);
+      opts.push(`<option value="${escapeHtml(id)}"${id === current ? ' selected' : ''}>${escapeHtml(`${item.name}${item.lang ? ' · ' + item.lang : ''}`)}</option>`);
+    });
+  }
   return opts.join('');
 }
 
@@ -543,16 +575,17 @@ function whenVoicesReady(callback) {
     callback();
     return;
   }
-  if (ttsVoiceList().length) {
-    callback();
-    return;
-  }
-  const done = () => {
-    window.speechSynthesis.removeEventListener('voiceschanged', done);
+  let calls = 0;
+  const run = () => {
+    if (calls > 6) return;
+    calls += 1;
     callback();
   };
-  window.speechSynthesis.addEventListener('voiceschanged', done);
   window.speechSynthesis.getVoices();
+  run();
+  window.speechSynthesis.addEventListener('voiceschanged', run);
+  setTimeout(run, 200);
+  setTimeout(run, 800);
 }
 
 function speak(text, onend, voiceURI) {
@@ -562,12 +595,19 @@ function speak(text, onend, voiceURI) {
   }
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
-  const voice = pickTtsVoice(voiceURI);
-  if (voice) {
-    utter.voice = voice;
-    utter.lang = voice.lang || 'en-US';
+  const wanted = String(voiceURI != null ? voiceURI : (((state.data && state.data.settings) || {}).ttsVoiceURI || ''));
+  if (wanted.indexOf('lang:') === 0) {
+    utter.lang = wanted.slice(5) || 'en-US';
+    const voice = pickTtsVoice(wanted);
+    if (voice) utter.voice = voice;
   } else {
-    utter.lang = 'en-US';
+    const voice = pickTtsVoice(wanted);
+    if (voice) {
+      utter.voice = voice;
+      utter.lang = voice.lang || 'en-US';
+    } else {
+      utter.lang = 'en-US';
+    }
   }
   utter.rate = Number(((state.data && state.data.settings) || {}).ttsRate) || 0.92;
   if (onend) utter.onend = onend;
@@ -1780,7 +1820,7 @@ async function openSettings() {
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button type="button" class="ghost" id="s-voice-try">试听这个声音</button>
       </div>
-      <p class="help">用的是这台设备自带的英语语音，不是词典真人录音。iPhone 可到「设置 → 辅助功能 → 朗读内容 → 声音」下载更多英文语音后，再回这里选择。</p>
+      <p class="help">网页发音只能用 Safari 开放给网页的声音。iPhone 在「设置 → 辅助功能 → 朗读内容」里下载的增强语音，网页读不到，刷新也没用，这是苹果的限制。请在这里改美式 / 英式 / 澳式，点试听即可。</p>
       <label class="field"><span>发音语速</span>
         <input id="s-rate" type="number" min="0.6" max="1.2" step="0.02" value="${escapeHtml(s.ttsRate)}">
       </label>
