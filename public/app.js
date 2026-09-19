@@ -1331,6 +1331,33 @@ function openDictation() {
   paint();
 }
 
+const SPEAK_GAP_OPTIONS = [
+  { ms: 500, label: '0.5 秒' },
+  { ms: 1000, label: '1 秒' },
+  { ms: 1500, label: '1.5 秒' },
+  { ms: 2000, label: '2 秒' },
+  { ms: 3000, label: '3 秒' },
+  { ms: 5000, label: '5 秒' },
+];
+
+function clampSpeakGap(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return 1000;
+  return Math.min(8000, Math.max(300, Math.round(n)));
+}
+
+function nearestSpeakGap(ms) {
+  const value = clampSpeakGap(ms);
+  return SPEAK_GAP_OPTIONS.reduce((best, item) => (
+    Math.abs(item.ms - value) < Math.abs(best - value) ? item.ms : best
+  ), SPEAK_GAP_OPTIONS[0].ms);
+}
+
+function speakGapOptionsHtml(selected) {
+  const current = nearestSpeakGap(selected);
+  return SPEAK_GAP_OPTIONS.map(item => `<option value="${item.ms}" ${item.ms === current ? 'selected' : ''}>${item.label}</option>`).join('');
+}
+
 function openPlayer() {
   const words = currentWords();
   if (!words.length) return;
@@ -1339,7 +1366,13 @@ function openPlayer() {
   state.speaking = true;
   const settings = state.data.settings || {};
   const repeat = Math.max(1, Number(settings.ttsRepeat) || 1);
-  const gap = Math.max(400, Number(settings.ttsGapMs) || 900);
+  let gap = nearestSpeakGap(settings.ttsGapMs || 1000);
+
+  function persistGap(ms) {
+    gap = nearestSpeakGap(ms);
+    if (state.data && state.data.settings) state.data.settings.ttsGapMs = gap;
+    api.updateSettings({ ttsGapMs: gap }).catch(() => {});
+  }
 
   function paint() {
     const word = words[index];
@@ -1350,6 +1383,10 @@ function openPlayer() {
           <div class="player-word">${escapeHtml(word.text)}</div>
           <div class="phonetic">${escapeHtml(word.phonetic)}</div>
           ${meaningHtml(word)}
+          <label class="player-gap">
+            <span>词间间隔</span>
+            <select id="pl-gap">${speakGapOptionsHtml(gap)}</select>
+          </label>
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="ghost" data-close>停止</button>
             <button type="button" class="secondary" id="pl-prev">上一词</button>
@@ -1359,6 +1396,9 @@ function openPlayer() {
         </div>
       </div>
     `);
+    ui.overlay.querySelector('#pl-gap').addEventListener('change', (event) => {
+      persistGap(event.target.value);
+    });
     ui.overlay.querySelector('#pl-prev').addEventListener('click', () => { index = Math.max(0, index - 1); playCurrent(0); });
     ui.overlay.querySelector('#pl-next').addEventListener('click', () => { index = Math.min(words.length - 1, index + 1); playCurrent(0); });
     ui.overlay.querySelector('#pl-pause').addEventListener('click', () => {
@@ -1409,6 +1449,9 @@ async function openSettings() {
       <label class="field"><span>全部发音时每个单词重复次数</span>
         <input id="s-rep" type="number" min="1" max="3" value="${escapeHtml(s.ttsRepeat)}">
       </label>
+      <label class="field"><span>全部发音时词与词的间隔</span>
+        <select id="s-gap">${speakGapOptionsHtml(s.ttsGapMs || 1000)}</select>
+      </label>
       <label class="field"><span>扫描标记颜色</span>
         <select id="s-color">
           <option value="auto">自动（橙 / 黄 / 绿，忽略红字）</option>
@@ -1447,6 +1490,7 @@ async function openSettings() {
       reminderMinutes: minutes,
       ttsRate: Number(ui.overlay.querySelector('#s-rate').value) || 0.92,
       ttsRepeat: Number(ui.overlay.querySelector('#s-rep').value) || 1,
+      ttsGapMs: nearestSpeakGap(ui.overlay.querySelector('#s-gap').value),
       launchAtLogin: ui.overlay.querySelector('#s-launch').value === '1',
       highlightColor: ui.overlay.querySelector('#s-color').value || 'auto',
       ieltsExamAt: fromDatetimeLocalValue(ui.overlay.querySelector('#s-exam').value),
