@@ -46,7 +46,7 @@ function showWindow() {
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
+  if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
 }
 
@@ -66,8 +66,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 420,
+    minHeight: 520,
     backgroundColor: '#f4b8c5',
     icon: iconImage(),
     title: '词栖',
@@ -80,6 +80,18 @@ function createWindow() {
     },
   });
 
+  mainWindow.on('minimize', (event) => {
+    if (process.platform === 'darwin') {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+  mainWindow.on('minimize', (event) => {
+    if (process.platform === 'darwin') {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
   mainWindow.on('close', (event) => {
     if (process.platform === 'darwin' && !quitting) {
       event.preventDefault();
