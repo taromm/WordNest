@@ -66,11 +66,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   color: #fff6e8;
-  padding: 28px 22px;
+  padding: 22px 18px 16px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid rgba(0, 0, 0, .12);
+}
+.sidebar-main {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .brand { display: flex; gap: 12px; align-items: center; }
@@ -114,9 +124,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .badge.empty { background: rgba(255,255,255,.08); color: rgba(243,234,217,.55); }
 
 .exam-slot {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   min-height: 0;
 }
 .exam-card {
@@ -175,8 +185,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   margin-top: 4px;
 }
 
-.sidebar-actions { display: grid; gap: 8px; }
-.data-hint { color: rgba(243, 234, 217, .48); font-size: 12px; line-height: 1.6; margin: 0; }
+.sidebar-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: none;
+}
+.sidebar-actions #btn-review-due,
+.sidebar-actions #btn-settings {
+  grid-column: 1 / -1;
+}
+.sidebar-actions .ghost {
+  padding: 9px 10px;
+  font-size: 13px;
+}
+.data-hint { color: rgba(243, 234, 217, .48); font-size: 11px; line-height: 1.5; margin: 0; flex: none; }
 
 .stage {
   overflow: auto;
@@ -615,8 +638,8 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     pointer-events: auto;
     transform: translate3d(-105%, 0, 0);
     transition: transform .2s ease;
-    overflow: auto;
-    padding: 64px 16px 24px;
+    overflow: hidden;
+    padding: 64px 16px 16px;
     gap: 14px;
     border-right: 0;
     box-shadow: 12px 0 40px rgba(36, 28, 22, .28);

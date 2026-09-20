@@ -53,7 +53,7 @@ https://taromm.github.io/WordNest/
 1. 打开 [gist.github.com](https://gist.github.com)，新建 **Secret** gist。文件名填 `wordnest-data.json`，内容先写 `{}`，创建后复制地址。
 2. 打开 [GitHub Tokens](https://github.com/settings/tokens)，新建 classic token，勾选 **gist**，复制 `ghp_` 开头的令牌。只在本机保存，不要发给别人、不要提交到仓库。
 3. Mac 桌面版先 `git pull` 再 `npm start`。电脑和手机网页都进入「设置与备份」，填同一组 Gist 和 Token，点保存。这一步以后不用重复。
-4. **第一次请在电脑点「上传本机到云端」**（侧栏或设置里都有）。之后电脑改完词就上传，手机打开菜单点「下载云端到本机」。反过来也一样。后操作的会整份覆盖先改的，不要两边同时改同一批词。
+4. **第一次请在电脑点「上传云端」**（侧栏或设置里都有）。之后电脑改完词就上传，手机打开菜单点「下载云端」。反过来也一样。后操作的会整份覆盖先改的，不要两边同时改同一批词。
 
 Token 只存在各设备本地，上传时会从 JSON 里去掉。
 

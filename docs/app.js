@@ -418,7 +418,7 @@ async function runCloudUpload() {
   if (!window.confirm('用本机单词完全覆盖云端？云端还没下载的改动会丢失。')) return;
   try {
     await pushCloudOverwrite();
-    showSyncNotice('已上传到云端', '本机四册已覆盖云端。手机打开菜单点「下载云端到本机」即可看到。');
+    showSyncNotice('已上传到云端', '本机四册已覆盖云端。手机打开菜单点「下载云端」即可看到。');
   } catch (err) {
     showSyncNotice('上传失败', err.message || '上传失败');
   }
@@ -2133,7 +2133,7 @@ function bindChrome() {
     if (event.target === ui.overlay) closeOverlay();
   });
   if (!api.desktop && ui.dataHint) {
-    ui.dataHint.textContent = 'Gist 和 Token 在设置里填一次即可。之后电脑点「上传本机到云端」，手机点「下载云端到本机」。';
+    ui.dataHint.textContent = 'Gist 和 Token 在设置里填一次。之后电脑点「上传云端」，手机点「下载云端」。';
   }
   if (api.onStartReview) api.onStartReview(() => openReview(false));
   if (window.speechSynthesis && window.speechSynthesis.getVoices) window.speechSynthesis.getVoices();
