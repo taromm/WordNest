@@ -42,10 +42,10 @@ function emptyRendererState() {
       cloudToken: '',
     },
     books: {
-      reading: { words: [] },
-      listening: { words: [] },
-      writing: { words: [] },
-      speaking: { words: [] },
+      reading: { words: [], notebook: '' },
+      listening: { words: [], notebook: '' },
+      writing: { words: [], notebook: '' },
+      speaking: { words: [], notebook: '' },
     },
   };
 }
@@ -113,10 +113,10 @@ function createLocalApi() {
       cloudToken: '',
     },
     books: {
-      reading: { words: [] },
-      listening: { words: [] },
-      writing: { words: [] },
-      speaking: { words: [] },
+      reading: { words: [], notebook: '' },
+      listening: { words: [], notebook: '' },
+      writing: { words: [], notebook: '' },
+      speaking: { words: [], notebook: '' },
     },
   };
 
@@ -233,6 +233,14 @@ function createLocalApi() {
       save(data);
       return word;
     },
+    async updateNotebook(bookId, text) {
+      const data = load();
+      if (!data.books[bookId]) data.books[bookId] = { words: [], notebook: '' };
+      data.books[bookId].notebook = String(text || '');
+      data.books[bookId].notebookUpdatedAt = new Date().toISOString();
+      save(data);
+      return data.books[bookId].notebook;
+    },
     async updateSettings(patch) {
       const data = load();
       Object.assign(data.settings, patch);
@@ -258,8 +266,9 @@ function createLocalApi() {
       next.settings.cloudGistId = keepGist || next.settings.cloudGistId || '';
       next.version = (incoming && incoming.version) || 1;
       ['reading', 'listening', 'writing', 'speaking'].forEach((id) => {
-        const words = ((((incoming || {}).books || {})[id] || {}).words) || [];
-        next.books[id] = { words: words.filter(item => item && item.text) };
+        const src = (((incoming || {}).books || {})[id] || {});
+        const words = (src.words || []).filter(item => item && item.text);
+        next.books[id] = { words, notebook: String(src.notebook || '') };
       });
       save(next);
       let words = 0;
@@ -720,8 +729,69 @@ function speak(text, onend, voiceURI) {
 }
 
 let scanPasteHandler = null;
+let notebookSaveTimer = null;
+
+function currentNotebook() {
+  return String(((((state.data || {}).books || {})[state.bookId] || {}).notebook) || '');
+}
+
+async function persistNotebook(text) {
+  if (!api.updateNotebook) return;
+  const value = String(text || '');
+  await api.updateNotebook(state.bookId, value);
+  if (state.data && state.data.books && state.data.books[state.bookId]) {
+    state.data.books[state.bookId].notebook = value;
+  }
+  const btn = document.getElementById('btn-notebook');
+  if (btn) btn.classList.toggle('has-notes', Boolean(value.trim()));
+}
+
+function openNotebook() {
+  const meta = bookMeta(state.bookId);
+  const text = currentNotebook();
+  openOverlay(`
+    <div class="modal wide">
+      <h2>${escapeHtml(meta.name)}笔记本</h2>
+      <p class="help">只属于「${escapeHtml(meta.name)}」这一册，和单词一起云端覆盖同步。可记篇章结构、听力场景、写作句型或口语素材。</p>
+      <label class="field"><span>笔记</span>
+        <textarea id="nb-text" class="notebook-input" placeholder="在这里写这一册的笔记…">${escapeHtml(text)}</textarea>
+      </label>
+      <p class="help" id="nb-status">${text.trim() ? '已保存' : '还是空白，写一点会自动保存。'}</p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close>关闭</button>
+        <button type="button" class="primary" id="nb-save">保存</button>
+      </div>
+    </div>
+  `);
+  const box = ui.overlay.querySelector('#nb-text');
+  const status = ui.overlay.querySelector('#nb-status');
+  const saveNow = async () => {
+    status.textContent = '正在保存…';
+    try {
+      await persistNotebook(box.value);
+      status.textContent = '已保存';
+    } catch (err) {
+      status.textContent = err.message || '保存失败';
+    }
+  };
+  box.addEventListener('input', () => {
+    status.textContent = '未保存';
+    clearTimeout(notebookSaveTimer);
+    notebookSaveTimer = setTimeout(saveNow, 700);
+  });
+  ui.overlay.querySelector('#nb-save').addEventListener('click', () => {
+    clearTimeout(notebookSaveTimer);
+    saveNow();
+  });
+}
 
 function closeOverlay() {
+  const box = ui.overlay && ui.overlay.querySelector('#nb-text');
+  const pendingNote = box ? box.value : null;
+  if (notebookSaveTimer) {
+    clearTimeout(notebookSaveTimer);
+    notebookSaveTimer = null;
+  }
   state.speaking = false;
   scanPasteHandler = null;
   stopSpeak();
@@ -729,6 +799,7 @@ function closeOverlay() {
   ui.overlay.hidden = true;
   ui.overlay.setAttribute('hidden', '');
   ui.overlay.innerHTML = '';
+  if (pendingNote != null) persistNotebook(pendingNote).catch(() => {});
 }
 
 function openOverlay(html) {
@@ -930,6 +1001,8 @@ function renderList() {
   ui.hint.textContent = meta.hint;
   if (ui.speakAll) ui.speakAll.hidden = !meta.speak;
   if (ui.dictation) ui.dictation.hidden = meta.id !== 'listening';
+  const notebookBtn = document.getElementById('btn-notebook');
+  if (notebookBtn) notebookBtn.classList.toggle('has-notes', Boolean(currentNotebook().trim()));
   ui.stats.innerHTML = `
     <div class="stat"><b>${all.length}</b><span>本册单词</span></div>
     <div class="stat"><b>${dueInBook(state.bookId)}</b><span>待复习</span></div>
@@ -2216,6 +2289,7 @@ function bindChrome() {
     if (button.id === 'btn-add') openWordForm();
     else if (button.id === 'btn-scan') openScan();
     else if (button.id === 'btn-manage') openBatchManage();
+    else if (button.id === 'btn-notebook') openNotebook();
     else if (button.id === 'btn-speak-all') openPlayer();
     else if (button.id === 'btn-dictation') openDictation();
     else if (button.id === 'btn-exam') { setMenuOpen(false); openExamForm(); }

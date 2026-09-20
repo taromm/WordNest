@@ -26,10 +26,10 @@ function emptyState() {
       cloudToken: '',
     },
     books: {
-      reading: { words: [] },
-      listening: { words: [] },
-      writing: { words: [] },
-      speaking: { words: [] },
+      reading: { words: [], notebook: '' },
+      listening: { words: [], notebook: '' },
+      writing: { words: [], notebook: '' },
+      speaking: { words: [], notebook: '' },
     },
   };
 }
@@ -118,6 +118,7 @@ function migrate(data) {
       : [];
     next.books[id] = Object.assign({}, incomingBooks[id] || {}, {
       words: rawWords.map(normalizeWord).filter(Boolean),
+      notebook: String((incomingBooks[id] && incomingBooks[id].notebook) || ''),
     });
   }
   for (const key of Object.keys(incomingBooks)) {
@@ -323,6 +324,15 @@ class Store {
     return book.words[index];
   }
 
+  updateNotebook(bookId, text) {
+    const book = this.state.books[bookId];
+    if (!book) throw new Error('未知单词本');
+    book.notebook = String(text || '');
+    book.notebookUpdatedAt = nowIso();
+    this.save();
+    return book.notebook;
+  }
+
   importMerge(incoming) {
     const migrated = migrate(incoming);
     const summary = { added: 0, existing: 0 };
@@ -331,6 +341,12 @@ class Store {
       summary.added += result.added.length;
       summary.existing += result.existing.length;
     }
+    for (const id of BOOKS) {
+      const incomingNote = String((((migrated.books || {})[id] || {}).notebook) || '');
+      const localNote = String((this.state.books[id].notebook) || '');
+      if (!localNote && incomingNote) this.state.books[id].notebook = incomingNote;
+    }
+    this.save();
     if (incoming && incoming.settings) {
       const incomingSettings = Object.assign({}, incoming.settings);
       delete incomingSettings.cloudToken;

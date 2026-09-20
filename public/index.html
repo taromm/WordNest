@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>词栖 · 四册单词本</title>
-  <link rel="stylesheet" href="style.css?v=20260920f">
+  <link rel="stylesheet" href="style.css?v=20260920g">
 </head>
 <body>
   <button type="button" id="btn-menu" class="menu-btn" aria-label="打开菜单" aria-expanded="false">
@@ -67,6 +67,12 @@
             </div>
           </div>
           <div class="action-group">
+            <span class="action-label">本册</span>
+            <div class="toolbar-actions">
+              <button type="button" id="btn-notebook" class="ghost">笔记本</button>
+            </div>
+          </div>
+          <div class="action-group">
             <span class="action-label">复习</span>
             <div class="toolbar-actions">
               <button type="button" id="btn-review-book" class="ghost">复习这一册</button>
@@ -81,7 +87,7 @@
   </div>
   <div id="overlay" class="overlay" hidden></div>
   <script src="highlight.js"></script>
-  <script src="app.js?v=20260920f"></script>
+  <script src="app.js?v=20260920g"></script>
   <script>
     if (!window.__wordnestBooted) {
       var list = document.getElementById('word-list');

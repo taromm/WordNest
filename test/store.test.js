@@ -110,3 +110,21 @@ test('keeps a saved IELTS exam time during migrate', () => {
   });
   assert.equal(migrated.settings.ieltsExamAt, '2026-12-05T01:00:00.000Z');
 });
+
+test('each book keeps its own notebook through migrate and updates', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordnest-'));
+  const store = new Store(path.join(dir, 'data.json'));
+  store.state = emptyState();
+  const migrated = migrate({
+    books: {
+      reading: { words: [{ text: 'keep' }], notebook: 'passage one' },
+    },
+  });
+  assert.equal(migrated.books.reading.notebook, 'passage one');
+  assert.equal(migrated.books.listening.notebook, '');
+  store.state = migrated;
+  store.updateNotebook('writing', 'task 2 outlines');
+  assert.equal(store.getState().books.writing.notebook, 'task 2 outlines');
+  assert.equal(store.getState().books.reading.notebook, 'passage one');
+  assert.equal(store.getState().books.reading.words[0].text, 'keep');
+});

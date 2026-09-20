@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('wordnest', {
   deleteWords: (bookId, ids) => ipcRenderer.invoke('store:deleteWords', { bookId, ids }),
   tagWords: (bookId, ids, tags) => ipcRenderer.invoke('store:tagWords', { bookId, ids, tags }),
   reviewWord: (bookId, id, rating) => ipcRenderer.invoke('store:reviewWord', { bookId, id, rating }),
+  updateNotebook: (bookId, text) => ipcRenderer.invoke('store:updateNotebook', { bookId, text }),
   updateSettings: (patch) => ipcRenderer.invoke('store:updateSettings', patch),
   exportData: () => ipcRenderer.invoke('store:export'),
   importData: () => ipcRenderer.invoke('store:import'),

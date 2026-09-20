@@ -86,12 +86,6 @@ function createWindow() {
       mainWindow.hide();
     }
   });
-  mainWindow.on('minimize', (event) => {
-    if (process.platform === 'darwin') {
-      event.preventDefault();
-      mainWindow.hide();
-    }
-  });
   mainWindow.on('close', (event) => {
     if (process.platform === 'darwin' && !quitting) {
       event.preventDefault();
@@ -195,6 +189,7 @@ function registerIpc() {
   ipcMain.handle('store:deleteWords', (_, { bookId, ids }) => store.deleteWords(bookId, ids));
   ipcMain.handle('store:tagWords', (_, { bookId, ids, tags }) => store.tagWords(bookId, ids, tags));
   ipcMain.handle('store:reviewWord', (_, { bookId, id, rating }) => store.reviewWord(bookId, id, rating));
+  ipcMain.handle('store:updateNotebook', (_, { bookId, text }) => store.updateNotebook(bookId, text));
   ipcMain.handle('store:updateSettings', (_, patch) => {
     const state = store.updateSettings(patch);
     if (Object.prototype.hasOwnProperty.call(patch || {}, 'launchAtLogin')) {
