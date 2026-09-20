@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>词栖 · 四册单词本</title>
-  <link rel="stylesheet" href="style.css?v=20260920b">
+  <link rel="stylesheet" href="style.css?v=20260920c">
 </head>
 <body>
   <button type="button" id="btn-menu" class="menu-btn" aria-label="打开菜单" aria-expanded="false">
@@ -26,6 +26,8 @@
       </div>
       <div class="sidebar-actions">
         <button type="button" id="btn-review-due" class="ghost">复习到期单词</button>
+        <button type="button" id="btn-cloud-down" class="ghost">下载云端到本机</button>
+        <button type="button" id="btn-cloud-up" class="ghost">上传本机到云端</button>
         <button type="button" id="btn-settings" class="ghost">设置与备份</button>
       </div>
       <p class="data-hint" id="data-hint">单词保存在本机用户目录，更新软件不会清空。</p>
@@ -77,7 +79,7 @@
   </div>
   <div id="overlay" class="overlay" hidden></div>
   <script src="highlight.js"></script>
-  <script src="app.js?v=20260920b"></script>
+  <script src="app.js?v=20260920c"></script>
   <script>
     if (!window.__wordnestBooted) {
       var list = document.getElementById('word-list');

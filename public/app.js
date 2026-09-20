@@ -371,6 +371,59 @@ async function cloudCredentials() {
   return { gistId, token };
 }
 
+function showSyncNotice(title, help) {
+  setMenuOpen(false);
+  openOverlay(`<div class="modal"><h2>${escapeHtml(title)}</h2><p class="help">${escapeHtml(help)}</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
+}
+
+async function pullCloudOverwrite() {
+  const cred = await cloudCredentials();
+  const incoming = await downloadCloudGist(cred.gistId, cred.token);
+  const result = await api.importOverwrite(incoming);
+  await reload();
+  return result;
+}
+
+async function pushCloudOverwrite() {
+  const cred = await cloudCredentials();
+  const payload = api.exportPublicState ? await api.exportPublicState() : publicCloudState(state.data);
+  await uploadCloudGist(cred.gistId, cred.token, payload);
+}
+
+async function runCloudDownload() {
+  setMenuOpen(false);
+  try {
+    await cloudCredentials();
+  } catch (err) {
+    openSettings();
+    return;
+  }
+  if (!window.confirm('用云端单词完全覆盖本机四册？本机还没上传的改动会丢失。')) return;
+  try {
+    const result = await pullCloudOverwrite();
+    showSyncNotice('已同步到本机', `云端覆盖完成，共 ${result.words || 0} 个词。`);
+  } catch (err) {
+    showSyncNotice('下载失败', err.message || '下载失败');
+  }
+}
+
+async function runCloudUpload() {
+  setMenuOpen(false);
+  try {
+    await cloudCredentials();
+  } catch (err) {
+    openSettings();
+    return;
+  }
+  if (!window.confirm('用本机单词完全覆盖云端？云端还没下载的改动会丢失。')) return;
+  try {
+    await pushCloudOverwrite();
+    showSyncNotice('已上传到云端', '本机四册已覆盖云端。手机打开菜单点「下载云端到本机」即可看到。');
+  } catch (err) {
+    showSyncNotice('上传失败', err.message || '上传失败');
+  }
+}
+
 async function lookupWord(text) {
   const word = String(text || '').trim();
   if (!word) return { phonetic: '', ieltsMeaning: '', otherMeanings: '', meaning: '', example: '' };
@@ -1983,10 +2036,7 @@ async function openSettings() {
     cloudStatus.textContent = '正在下载…';
     try {
       await saveCloudFields();
-      const cred = await cloudCredentials();
-      const incoming = await downloadCloudGist(cred.gistId, cred.token);
-      const result = await api.importOverwrite(incoming);
-      await reload();
+      const result = await pullCloudOverwrite();
       cloudStatus.textContent = `已用云端覆盖本机，共 ${result.words || 0} 个词。`;
     } catch (err) {
       cloudStatus.textContent = err.message || '下载失败';
@@ -1997,9 +2047,7 @@ async function openSettings() {
     cloudStatus.textContent = '正在上传…';
     try {
       await saveCloudFields();
-      const cred = await cloudCredentials();
-      const payload = api.exportPublicState ? await api.exportPublicState() : publicCloudState(state.data);
-      await uploadCloudGist(cred.gistId, cred.token, payload);
+      await pushCloudOverwrite();
       cloudStatus.textContent = '已用本机覆盖云端。';
     } catch (err) {
       cloudStatus.textContent = err.message || '上传失败';
@@ -2047,6 +2095,8 @@ function bindChrome() {
     else if (button.id === 'btn-exam') { setMenuOpen(false); openExamForm(); }
     else if (button.id === 'btn-review-book') openReview(true);
     else if (button.id === 'btn-review-due') { setMenuOpen(false); openReview(false); }
+    else if (button.id === 'btn-cloud-down') runCloudDownload();
+    else if (button.id === 'btn-cloud-up') runCloudUpload();
     else if (button.id === 'btn-settings') { setMenuOpen(false); openSettings(); }
   });
   const backdrop = document.getElementById('menu-backdrop');
@@ -2083,7 +2133,7 @@ function bindChrome() {
     if (event.target === ui.overlay) closeOverlay();
   });
   if (!api.desktop && ui.dataHint) {
-    ui.dataHint.textContent = '网页版可以记词和云端覆盖同步。扫描识别和系统提醒请用 Mac 桌面版。';
+    ui.dataHint.textContent = 'Gist 和 Token 在设置里填一次即可。之后电脑点「上传本机到云端」，手机点「下载云端到本机」。';
   }
   if (api.onStartReview) api.onStartReview(() => openReview(false));
   if (window.speechSynthesis && window.speechSynthesis.getVoices) window.speechSynthesis.getVoices();
