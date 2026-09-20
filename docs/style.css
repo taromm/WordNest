@@ -1,5 +1,6 @@
 :root {
   --wallpaper: url("background.jpg");
+  --wallpaper-blur: 8px;
   --paper: #fff6e8;
   --paper-2: #f8e7c9;
   --ink: #5a3b22;
@@ -33,13 +34,13 @@ body {
 body::before {
   content: "";
   position: fixed;
-  inset: -28px;
+  inset: calc(-20px - var(--wallpaper-blur));
   z-index: 0;
   background-image: var(--wallpaper);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
-  filter: blur(8px);
+  filter: blur(var(--wallpaper-blur));
   transform: scale(1.05);
   pointer-events: none;
 }
@@ -597,13 +598,29 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   margin: 22px 0 8px;
 }
 .wallpaper-preview {
+  position: relative;
   height: 84px;
   margin-top: 8px;
   border-radius: 14px;
   border: 1px solid var(--line);
+  overflow: hidden;
+}
+.wallpaper-preview::before {
+  content: "";
+  position: absolute;
+  inset: calc(-12px - var(--wallpaper-blur));
   background-image: var(--wallpaper);
   background-size: cover;
   background-position: center;
+  filter: blur(var(--wallpaper-blur));
+}
+.field input[type="range"] {
+  width: 100%;
+  padding: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  accent-color: var(--wood);
 }
 
 @media (max-width: 960px) {

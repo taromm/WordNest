@@ -1916,6 +1916,33 @@ function applyWallpaper(dataUrl) {
   else document.documentElement.style.removeProperty('--wallpaper');
 }
 
+function clampWallpaperBlur(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 8;
+  return Math.max(0, Math.min(24, Math.round(n)));
+}
+
+function readSavedWallpaperBlur() {
+  try {
+    const raw = localStorage.getItem('wordnest-wallpaper-blur-v1');
+    if (raw == null || raw === '') return 8;
+    return clampWallpaperBlur(raw);
+  } catch (_) {
+    return 8;
+  }
+}
+
+function applyWallpaperBlur(px) {
+  document.documentElement.style.setProperty('--wallpaper-blur', `${clampWallpaperBlur(px)}px`);
+}
+
+function saveWallpaperBlur(px) {
+  const blur = clampWallpaperBlur(px);
+  try { localStorage.setItem('wordnest-wallpaper-blur-v1', String(blur)); } catch (_) { /* ignore */ }
+  applyWallpaperBlur(blur);
+  return blur;
+}
+
 function saveWallpaper(dataUrl) {
   try {
     if (dataUrl) localStorage.setItem('wordnest-wallpaper-v1', dataUrl);
@@ -2010,6 +2037,10 @@ async function openSettings() {
         <input id="s-wallpaper" type="file" accept="image/*">
       </label>
       <div class="wallpaper-preview" id="s-wallpaper-preview" aria-hidden="true"></div>
+      <label class="field"><span>模糊程度：<b id="s-wallpaper-blur-val">8</b></span>
+        <input id="s-wallpaper-blur" type="range" min="0" max="24" step="1" value="8">
+      </label>
+      <p class="help">0 为完全清晰，数字越大越糊。默认 8，和原来差不多。</p>
       <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
         <button type="button" class="ghost" id="s-wallpaper-reset">恢复默认壁纸</button>
       </div>
@@ -2052,6 +2083,17 @@ async function openSettings() {
     speak('example', null, voiceSelect.value || 'youdao:us');
   });
   const wallpaperStatus = ui.overlay.querySelector('#s-wallpaper-status');
+  const blurInput = ui.overlay.querySelector('#s-wallpaper-blur');
+  const blurLabel = ui.overlay.querySelector('#s-wallpaper-blur-val');
+  const blurNow = readSavedWallpaperBlur();
+  blurInput.value = String(blurNow);
+  blurLabel.textContent = String(blurNow);
+  const onBlurInput = () => {
+    const blur = saveWallpaperBlur(blurInput.value);
+    blurLabel.textContent = String(blur);
+  };
+  blurInput.addEventListener('input', onBlurInput);
+  blurInput.addEventListener('change', onBlurInput);
   ui.overlay.querySelector('#s-wallpaper').addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
@@ -2226,6 +2268,7 @@ function bindChrome() {
 function boot() {
   window.__wordnestBooted = true;
   applyWallpaper(readSavedWallpaper());
+  applyWallpaperBlur(readSavedWallpaperBlur());
   closeOverlay();
   render();
   bindChrome();
