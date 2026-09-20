@@ -1906,6 +1906,58 @@ function openPlayer() {
   playCurrent(0);
 }
 
+function readSavedWallpaper() {
+  try { return localStorage.getItem('wordnest-wallpaper-v1') || ''; }
+  catch (_) { return ''; }
+}
+
+function applyWallpaper(dataUrl) {
+  if (dataUrl) document.documentElement.style.setProperty('--wallpaper', `url("${dataUrl}")`);
+  else document.documentElement.style.removeProperty('--wallpaper');
+}
+
+function saveWallpaper(dataUrl) {
+  try {
+    if (dataUrl) localStorage.setItem('wordnest-wallpaper-v1', dataUrl);
+    else localStorage.removeItem('wordnest-wallpaper-v1');
+  } catch (err) {
+    throw new Error(err && err.name === 'QuotaExceededError' ? '这张图太大，浏览器存不下，请换一张更小的照片。' : (err.message || '壁纸保存失败'));
+  }
+  applyWallpaper(dataUrl || '');
+}
+
+function fileToWallpaper(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const maxEdge = 1600;
+      let width = img.naturalWidth || img.width;
+      let height = img.naturalHeight || img.height;
+      const scale = Math.min(1, maxEdge / Math.max(width, height, 1));
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      let quality = 0.82;
+      let out = canvas.toDataURL('image/jpeg', quality);
+      while (out.length > 1400000 && quality > 0.48) {
+        quality -= 0.12;
+        out = canvas.toDataURL('image/jpeg', quality);
+      }
+      resolve(out);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('这张图读不出来，请换 jpg 或 png。'));
+    };
+    img.src = url;
+  });
+}
+
 async function openSettings() {
   const info = await api.getDataInfo();
   const s = state.data.settings;
@@ -1952,6 +2004,16 @@ async function openSettings() {
       <label class="field"><span>登录 macOS 时自动打开词栖</span>
         <select id="s-launch"><option value="0">否</option><option value="1">是</option></select>
       </label>
+      <h3 class="settings-sub">网页壁纸</h3>
+      <p class="help">从相册选一张图作为背景。只存在这台设备的浏览器里，不会上传到云端。</p>
+      <label class="field"><span>选择图片</span>
+        <input id="s-wallpaper" type="file" accept="image/*">
+      </label>
+      <div class="wallpaper-preview" id="s-wallpaper-preview" aria-hidden="true"></div>
+      <div class="modal-actions" style="justify-content:flex-start;margin-top:8px">
+        <button type="button" class="ghost" id="s-wallpaper-reset">恢复默认壁纸</button>
+      </div>
+      <p class="help" id="s-wallpaper-status"></p>
       <h3 class="settings-sub">手机 / 电脑覆盖同步</h3>
       <p class="help">用一份<strong>私有</strong> GitHub Gist 存单词 JSON。下载会用云端覆盖本机；上传会用本机覆盖云端。Token 只存在本机，不会上传。手机打开网页后也在这里填同一组 Gist 和 Token。</p>
       <label class="field"><span>私有 Gist ID 或链接</span>
@@ -1988,6 +2050,28 @@ async function openSettings() {
   });
   ui.overlay.querySelector('#s-voice-try').addEventListener('click', () => {
     speak('example', null, voiceSelect.value || 'youdao:us');
+  });
+  const wallpaperStatus = ui.overlay.querySelector('#s-wallpaper-status');
+  ui.overlay.querySelector('#s-wallpaper').addEventListener('change', async (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    wallpaperStatus.textContent = '正在处理图片…';
+    try {
+      const dataUrl = await fileToWallpaper(file);
+      saveWallpaper(dataUrl);
+      wallpaperStatus.textContent = '壁纸已换好，关掉设置就能看到。';
+    } catch (err) {
+      wallpaperStatus.textContent = err.message || '壁纸更换失败';
+    }
+    event.target.value = '';
+  });
+  ui.overlay.querySelector('#s-wallpaper-reset').addEventListener('click', () => {
+    try {
+      saveWallpaper('');
+      wallpaperStatus.textContent = '已恢复默认壁纸。';
+    } catch (err) {
+      wallpaperStatus.textContent = err.message || '恢复失败';
+    }
   });
   ui.overlay.querySelector('#s-save').addEventListener('click', async () => {
     const minutes = Math.min(120, Math.max(60, Number(ui.overlay.querySelector('#s-min').value) || 90));
@@ -2141,6 +2225,7 @@ function bindChrome() {
 
 function boot() {
   window.__wordnestBooted = true;
+  applyWallpaper(readSavedWallpaper());
   closeOverlay();
   render();
   bindChrome();
