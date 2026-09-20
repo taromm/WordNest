@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>词栖 · 四册单词本</title>
-  <link rel="stylesheet" href="style.css?v=20260920g">
+  <link rel="stylesheet" href="style.css?v=20260920h">
 </head>
 <body>
   <button type="button" id="btn-menu" class="menu-btn" aria-label="打开菜单" aria-expanded="false">
@@ -63,21 +63,21 @@
             <div class="toolbar-actions">
               <button type="button" id="btn-add" class="primary">打字加入</button>
               <button type="button" id="btn-scan" class="secondary">扫描图片</button>
-              <button type="button" id="btn-manage" class="ghost">批量管理</button>
-            </div>
-          </div>
-          <div class="action-group">
-            <span class="action-label">本册</span>
-            <div class="toolbar-actions">
-              <button type="button" id="btn-notebook" class="ghost">笔记本</button>
+              <button type="button" id="btn-manage" class="tea-manage">批量管理</button>
             </div>
           </div>
           <div class="action-group">
             <span class="action-label">复习</span>
             <div class="toolbar-actions">
-              <button type="button" id="btn-review-book" class="ghost">复习这一册</button>
-              <button type="button" id="btn-dictation" class="ghost" hidden>听写复习</button>
-              <button type="button" id="btn-speak-all" class="secondary" hidden>全部发音</button>
+              <button type="button" id="btn-review-book" class="tea-review">复习这一册</button>
+              <button type="button" id="btn-dictation" class="tea-dictation" hidden>听写复习</button>
+              <button type="button" id="btn-speak-all" class="tea-speak" hidden>全部发音</button>
+            </div>
+          </div>
+          <div class="action-group action-group-end">
+            <span class="action-label">本册</span>
+            <div class="toolbar-actions">
+              <button type="button" id="btn-notebook" class="tea-note">笔记本</button>
             </div>
           </div>
         </div>
@@ -87,7 +87,7 @@
   </div>
   <div id="overlay" class="overlay" hidden></div>
   <script src="highlight.js"></script>
-  <script src="app.js?v=20260920g"></script>
+  <script src="app.js?v=20260920h"></script>
   <script>
     if (!window.__wordnestBooted) {
       var list = document.getElementById('word-list');

@@ -750,17 +750,19 @@ function openNotebook() {
   const meta = bookMeta(state.bookId);
   const text = currentNotebook();
   openOverlay(`
-    <div class="modal wide">
-      <h2>${escapeHtml(meta.name)}笔记本</h2>
-      <p class="help">只属于「${escapeHtml(meta.name)}」这一册，和单词一起云端覆盖同步。可记篇章结构、听力场景、写作句型或口语素材。</p>
-      <label class="field"><span>笔记</span>
-        <textarea id="nb-text" class="notebook-input" placeholder="在这里写这一册的笔记…">${escapeHtml(text)}</textarea>
-      </label>
-      <p class="help" id="nb-status">${text.trim() ? '已保存' : '还是空白，写一点会自动保存。'}</p>
-      <div class="modal-actions">
-        <button type="button" class="ghost" data-close>关闭</button>
-        <button type="button" class="primary" id="nb-save">保存</button>
+    <div class="modal notebook-modal">
+      <div class="notebook-head">
+        <div>
+          <h2>${escapeHtml(meta.name)}笔记本</h2>
+          <p class="help">只属于「${escapeHtml(meta.name)}」这一册，和单词一起云端覆盖同步。可按 Markdown 记篇章结构、听力场景、写作句型或口语素材。</p>
+          <p class="help" id="nb-status">${text.trim() ? '已保存' : '还是空白，写一点会自动保存。'}</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="ghost" data-close>关闭</button>
+          <button type="button" class="primary" id="nb-save">保存</button>
+        </div>
       </div>
+      <textarea id="nb-text" class="notebook-input" spellcheck="false" placeholder="# 标题&#10;&#10;在这里写这一册的笔记…">${escapeHtml(text)}</textarea>
     </div>
   `);
   const box = ui.overlay.querySelector('#nb-text');

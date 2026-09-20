@@ -232,7 +232,9 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   gap: 14px;
   flex-wrap: wrap;
   align-items: end;
+  width: 100%;
 }
+.action-group-end { margin-left: auto; }
 .action-group {
   display: grid;
   gap: 6px;
@@ -300,17 +302,42 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   z-index: 28;
 }
 
-.primary, .secondary, .ghost, .danger {
+.primary, .secondary, .ghost, .danger, .tea-manage, .tea-review, .tea-dictation, .tea-speak, .tea-note {
   border: 0;
   border-radius: 12px;
   padding: 10px 14px;
   font-weight: 600;
 }
 .primary { background: #6b4423; color: #fff6e8; }
-.secondary { background: #ffe7b6; border: 1px solid var(--line); }
+.secondary { background: #ffe7b6; border: 1px solid var(--line); color: var(--ink); }
 .ghost { background: transparent; border: 1px solid rgba(255, 246, 232, .28); color: inherit; }
 .stage .ghost { border-color: var(--line); color: var(--ink); background: rgba(255,255,255,.35); }
 .danger { background: #fff1ea; color: var(--danger); border: 1px solid rgba(196, 106, 74, .28); }
+.tea-manage {
+  background: #ead6c4;
+  color: #5a3b22;
+  border: 1px solid rgba(107, 68, 35, .18);
+}
+.tea-review {
+  background: #d7b48a;
+  color: #4a2f1c;
+  border: 1px solid rgba(107, 68, 35, .16);
+}
+.tea-dictation {
+  background: #c9863a;
+  color: #fff8ee;
+  border: 1px solid rgba(107, 68, 35, .2);
+}
+.tea-speak {
+  background: #e8b86d;
+  color: #5a3b22;
+  border: 1px solid rgba(139, 90, 43, .28);
+}
+.tea-note {
+  background: #fffaf3;
+  color: #6b4423;
+  border: 1.5px solid #8d5a30;
+}
 
 .word-list { margin-top: 22px; display: grid; gap: 10px; }
 .word-card, .empty-card {
@@ -414,6 +441,23 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   box-shadow: 0 30px 80px rgba(36, 28, 22, .28);
 }
 .modal.wide { width: min(920px, 100%); }
+.modal.notebook-modal {
+  width: min(980px, 100%);
+  height: min(88vh, 860px);
+  max-height: calc(100vh - 32px);
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.notebook-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex: none;
+}
+.notebook-head .modal-actions { margin: 0; flex-wrap: nowrap; }
 .modal h2 { font-family: var(--serif); font-size: 32px; margin: 0 0 8px; }
 .modal p.help { color: var(--mute); line-height: 1.6; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -422,12 +466,24 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
 .field input, .field textarea, .field select { width: 100%; }
 .field textarea { min-height: 80px; resize: vertical; }
 .notebook-input {
-  min-height: min(52vh, 420px);
-  font-size: 16px;
-  line-height: 1.7;
-  font-family: var(--sans);
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin-top: 14px;
+  padding: 22px 24px;
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.75;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  resize: none;
+  outline: none;
+  overflow: auto;
 }
+.notebook-input:focus { border-color: rgba(196, 146, 64, .7); }
 #btn-notebook.has-notes {
+  background: #fff3dc;
   box-shadow: inset 3px 0 0 var(--gold);
 }
 .modal-actions { margin-top: 20px; justify-content: flex-end; }
@@ -741,6 +797,18 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     min-width: 0;
   }
   .toolbar-groups { gap: 12px; align-items: stretch; flex-direction: column; }
+  .action-group-end {
+    margin-left: 0;
+    justify-items: end;
+  }
+  .action-group-end .toolbar-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+  .action-group-end .toolbar-actions button {
+    flex: none;
+    min-width: 108px;
+  }
   .toolbar-actions {
     display: flex;
     flex-wrap: nowrap;
@@ -768,6 +836,14 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     max-height: calc(100vh - 24px);
     max-height: calc(100dvh - 24px);
   }
+  .modal.notebook-modal {
+    height: min(92dvh, 100%);
+    max-height: calc(100dvh - 12px);
+    padding: 14px 12px 12px;
+  }
+  .notebook-head { gap: 10px; }
+  .notebook-head .modal-actions { width: 100%; }
+  .notebook-input { padding: 16px; font-size: 16px; }
   .overlay { padding: 12px; align-items: end; }
   .word-list { margin-top: 16px; }
   .word-card, .empty-card { padding: 14px 12px; border-radius: 20px; }
