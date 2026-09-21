@@ -805,6 +805,35 @@ async function persistNotebook(text) {
   if (btn) btn.classList.toggle('has-notes', Boolean(value.trim()));
 }
 
+function notebookMarkdownToHtml(text) {
+  const escaped = escapeHtml(text);
+  return escaped.replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+}
+
+function notebookHtmlToMarkdown(root) {
+  if (!root) return '';
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'br') return '\n';
+    const inner = Array.from(node.childNodes).map(walk).join('');
+    if (tag === 'b' || tag === 'strong') return inner ? `**${inner.replace(/^\*\*|\*\*$/g, '')}**` : '';
+    if (tag === 'div' || tag === 'p' || tag === 'li' || tag === 'h1' || tag === 'h2' || tag === 'h3') {
+      return inner + '\n';
+    }
+    return inner;
+  }
+  return walk(root).replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '');
+}
+
+function readNotebookValue(box) {
+  if (!box) return null;
+  if (box.getAttribute && box.getAttribute('contenteditable') === 'true') return notebookHtmlToMarkdown(box);
+  if ('value' in box) return box.value;
+  return box.textContent || '';
+}
+
 function openNotebook() {
   const meta = bookMeta(state.bookId);
   const text = currentNotebook();
@@ -813,7 +842,7 @@ function openNotebook() {
       <div class="notebook-head">
         <div>
           <h2>${escapeHtml(meta.name)}笔记本</h2>
-          <p class="help">只属于「${escapeHtml(meta.name)}」这一册，和单词一起云端覆盖同步。可按 Markdown 记篇章结构、听力场景、写作句型或口语素材。</p>
+          <p class="help">只属于「${escapeHtml(meta.name)}」这一册，和单词一起云端覆盖同步。选中文字后点「标粗」，或按 Ctrl / ⌘ + B。</p>
           <p class="help" id="nb-status">${text.trim() ? '已保存' : '还是空白，写一点会自动保存。'}</p>
         </div>
         <div class="modal-actions">
@@ -821,34 +850,67 @@ function openNotebook() {
           <button type="button" class="primary" id="nb-save">保存</button>
         </div>
       </div>
-      <textarea id="nb-text" class="notebook-input" spellcheck="false" placeholder="# 标题&#10;&#10;在这里写这一册的笔记…">${escapeHtml(text)}</textarea>
+      <div class="notebook-tools">
+        <button type="button" id="nb-bold" class="nb-bold" title="标粗 Ctrl+B"><b>B</b> 标粗</button>
+      </div>
+      <div id="nb-text" class="notebook-input" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" data-placeholder="在这里写这一册的笔记…"></div>
     </div>
   `);
   const box = ui.overlay.querySelector('#nb-text');
   const status = ui.overlay.querySelector('#nb-status');
+  const boldBtn = ui.overlay.querySelector('#nb-bold');
+  if (text.trim()) box.innerHTML = notebookMarkdownToHtml(text);
+  else box.innerHTML = '';
+
+  const markEmpty = () => {
+    box.classList.toggle('is-empty', !readNotebookValue(box).trim());
+  };
+  markEmpty();
+
   const saveNow = async () => {
     status.textContent = '正在保存…';
     try {
-      await persistNotebook(box.value);
+      await persistNotebook(readNotebookValue(box));
       status.textContent = '已保存';
     } catch (err) {
       status.textContent = err.message || '保存失败';
     }
   };
   box.addEventListener('input', () => {
+    markEmpty();
     status.textContent = '未保存';
     clearTimeout(notebookSaveTimer);
     notebookSaveTimer = setTimeout(saveNow, 700);
+  });
+  box.addEventListener('paste', (event) => {
+    event.preventDefault();
+    const pasted = (event.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, pasted);
+  });
+  function applyBold() {
+    box.focus();
+    try { document.execCommand('styleWithCSS', false, false); } catch (_) { /* ignore */ }
+    document.execCommand('bold');
+    box.dispatchEvent(new Event('input'));
+  }
+  boldBtn.addEventListener('mousedown', (event) => event.preventDefault());
+  boldBtn.addEventListener('click', applyBold);
+  box.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
+      event.preventDefault();
+      applyBold();
+    }
   });
   ui.overlay.querySelector('#nb-save').addEventListener('click', () => {
     clearTimeout(notebookSaveTimer);
     saveNow();
   });
+  box.focus();
 }
 
 function closeOverlay() {
   const box = ui.overlay && ui.overlay.querySelector('#nb-text');
-  const pendingNote = box ? box.value : null;
+  const pendingNote = box ? readNotebookValue(box) : null;
   if (notebookSaveTimer) {
     clearTimeout(notebookSaveTimer);
     notebookSaveTimer = null;

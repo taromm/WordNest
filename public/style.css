@@ -302,7 +302,7 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   z-index: 28;
 }
 
-.primary, .secondary, .ghost, .danger, .tea-manage, .tea-review, .tea-dictation, .tea-speak, .tea-note {
+.primary, .secondary, .ghost, .danger, .tea-manage, .tea-review, .tea-dictation, .tea-speak, .tea-note, .nb-bold {
   border: 0;
   border-radius: 12px;
   padding: 10px 14px;
@@ -458,6 +458,20 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   flex: none;
 }
 .notebook-head .modal-actions { margin: 0; flex-wrap: nowrap; }
+.notebook-tools {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex: none;
+}
+.nb-bold {
+  min-width: 88px;
+  background: #fffaf3;
+  color: #6b4423;
+  border: 1.5px solid #8d5a30;
+  font-family: var(--serif);
+}
+.nb-bold b { font-size: 16px; margin-right: 4px; }
 .modal h2 { font-family: var(--serif); font-size: 32px; margin: 0 0 8px; }
 .modal p.help { color: var(--mute); line-height: 1.6; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -469,7 +483,7 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
-  margin-top: 14px;
+  margin-top: 10px;
   padding: 22px 24px;
   font-family: var(--serif);
   font-size: 18px;
@@ -480,8 +494,20 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   resize: none;
   outline: none;
   overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .notebook-input:focus { border-color: rgba(196, 146, 64, .7); }
+.notebook-input[contenteditable="true"].is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--mute);
+  pointer-events: none;
+}
+.notebook-input strong,
+.notebook-input b {
+  font-weight: 700;
+  color: #3f2818;
+}
 #btn-notebook.has-notes {
   background: #fff3dc;
   box-shadow: inset 3px 0 0 var(--gold);
