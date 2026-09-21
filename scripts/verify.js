@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { extractMarkedWords } = require('../src/extract-markers');
-const { Store, migrate, dueCount, emptyState } = require('../src/store');
+const { Store, migrate, dueCount, dueWords, applyReview, createWord, emptyState } = require('../src/store');
 
 assert.deepStrictEqual(
   extractMarkedWords('The *abandon* of **reluctant** students, see [ephemeral] and 【lucid】 plus ★vivid and #sparse.'),
@@ -43,6 +43,27 @@ assert.strictEqual(store.getState().books.reading.words.length, 3);
 store.addWords('reading', [{ text: 'keep', meaning: '保留', tags: ['剑雅 17'] }]);
 assert.deepStrictEqual(store.getState().books.reading.words.find(word => word.text === 'keep').tags, ['剑雅 17']);
 assert.ok(store.getState().settings.savedTags.indexOf('剑雅 17') !== -1);
+
+const now = Date.parse('2026-09-21T00:00:00.000Z');
+let curveWord = createWord({ text: 'curve', createdAt: new Date(now).toISOString() });
+curveWord = applyReview(curveWord, 'good', now);
+assert.strictEqual(curveWord.review.intervalMinutes, 20);
+curveWord = applyReview(curveWord, 'good', now + 20 * 60 * 1000);
+assert.strictEqual(curveWord.review.intervalMinutes, 60);
+
+const fresh = createWord({
+  text: 'fresh',
+  createdAt: new Date(now).toISOString(),
+  review: { intervalMinutes: 90, dueAt: new Date(now).toISOString(), lastReviewedAt: new Date(now).toISOString(), forgetCount: 0 },
+});
+const rusty = createWord({
+  text: 'rusty',
+  createdAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+  review: { intervalMinutes: 90, dueAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(), lastReviewedAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(), forgetCount: 2 },
+});
+const ranked = emptyState();
+ranked.books.reading.words = [fresh, rusty];
+assert.strictEqual(dueWords(ranked, 'reading', now + 60 * 60 * 1000)[0].word.text, 'rusty');
 
 assert.deepStrictEqual(
   require('../src/extract-markers').extractScanItems('stem from, neglect, overlook, underestimate'),

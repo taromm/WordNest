@@ -127,30 +127,74 @@ function migrate(data) {
   return next;
 }
 
-function applyReview(word, rating) {
-  const now = Date.now();
+const FORGETTING_CURVE_MINUTES = [
+  20,
+  60,
+  9 * 60,
+  24 * 60,
+  2 * 24 * 60,
+  6 * 24 * 60,
+  15 * 24 * 60,
+  31 * 24 * 60,
+];
+
+function applyReview(word, rating, now) {
+  const ts = now || Date.now();
   const review = Object.assign({}, word.review);
-  review.lastReviewedAt = new Date(now).toISOString();
+  review.lastReviewedAt = new Date(ts).toISOString();
   review.reviewCount = (review.reviewCount || 0) + 1;
+  review.ease = Number(review.ease) || 2.5;
 
   if (rating === 'again') {
     review.forgetCount = (review.forgetCount || 0) + 1;
     review.repetitions = 0;
-    review.intervalMinutes = 60;
+    review.ease = Math.max(1.3, review.ease - 0.2);
+    review.intervalMinutes = 10;
     review.mastered = false;
   } else if (rating === 'hard') {
-    review.repetitions = (review.repetitions || 0) + 1;
-    review.intervalMinutes = 90;
+    review.ease = Math.max(1.3, review.ease - 0.15);
+    const step = Math.max(0, (review.repetitions || 0) - 1);
+    const base = FORGETTING_CURVE_MINUTES[Math.min(step, FORGETTING_CURVE_MINUTES.length - 1)];
+    review.intervalMinutes = Math.max(20, Math.round(base * 0.6));
     review.mastered = false;
   } else {
     review.repetitions = (review.repetitions || 0) + 1;
-    const prev = review.intervalMinutes || 90;
-    review.intervalMinutes = review.repetitions === 1 ? 120 : Math.min(Math.round(prev * (review.ease || 2.5)), 60 * 24 * 30);
-    review.mastered = review.intervalMinutes >= 60 * 24 * 7;
+    review.ease = Math.min(2.8, review.ease + 0.05);
+    const step = Math.min(FORGETTING_CURVE_MINUTES.length - 1, Math.max(0, review.repetitions - 1));
+    let minutes = FORGETTING_CURVE_MINUTES[step];
+    if (review.repetitions > FORGETTING_CURVE_MINUTES.length) {
+      minutes = Math.round(FORGETTING_CURVE_MINUTES[FORGETTING_CURVE_MINUTES.length - 1] * (review.ease / 2.5));
+    }
+    review.intervalMinutes = Math.min(minutes, 60 * 24 * 60);
+    review.mastered = review.intervalMinutes >= 6 * 24 * 60;
   }
 
-  review.dueAt = new Date(now + review.intervalMinutes * 60 * 1000).toISOString();
-  return Object.assign({}, word, { review, updatedAt: new Date(now).toISOString() });
+  review.dueAt = new Date(ts + review.intervalMinutes * 60 * 1000).toISOString();
+  return Object.assign({}, word, { review, updatedAt: new Date(ts).toISOString() });
+}
+
+function reviewRetention(word, now) {
+  const ts = now || Date.now();
+  const review = (word && word.review) || {};
+  const last = Date.parse(review.lastReviewedAt) || Date.parse(word && word.createdAt) || ts;
+  const elapsed = Math.max(0, ts - last);
+  const intervalMs = Math.max(10, Number(review.intervalMinutes) || 90) * 60 * 1000;
+  const forgets = Number(review.forgetCount) || 0;
+  const ease = Number(review.ease) || 2.5;
+  const stability = intervalMs * Math.max(0.8, ease / 2.5) / (1 + forgets * 0.35);
+  return Math.exp(-elapsed / Math.max(stability, 1));
+}
+
+function compareReviewItems(a, b, now) {
+  const wa = a && a.word ? a.word : a;
+  const wb = b && b.word ? b.word : b;
+  const ra = reviewRetention(wa, now);
+  const rb = reviewRetention(wb, now);
+  if (ra !== rb) return ra - rb;
+  const da = Date.parse((wa.review || {}).dueAt) || 0;
+  const db = Date.parse((wb.review || {}).dueAt) || 0;
+  if (da !== db) return da - db;
+  return String(wa.text || '').localeCompare(String(wb.text || ''));
 }
 
 function dueWords(state, bookId, now) {
@@ -165,6 +209,7 @@ function dueWords(state, bookId, now) {
       if (new Date(word.review.dueAt).getTime() <= ts) out.push({ bookId: id, word });
     }
   }
+  out.sort((a, b) => compareReviewItems(a, b, ts));
   return out;
 }
 
@@ -391,5 +436,8 @@ module.exports = {
   createWord,
   dueWords,
   dueCount,
+  reviewRetention,
+  compareReviewItems,
+  FORGETTING_CURVE_MINUTES,
   normalizeTags,
 };

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { Store, migrate, dueCount, emptyState } = require('../src/store');
+const { Store, migrate, dueCount, dueWords, applyReview, createWord, emptyState } = require('../src/store');
 
 test('migrate never drops words from older files', () => {
   const migrated = migrate({
@@ -127,4 +127,47 @@ test('each book keeps its own notebook through migrate and updates', () => {
   assert.equal(store.getState().books.writing.notebook, 'task 2 outlines');
   assert.equal(store.getState().books.reading.notebook, 'passage one');
   assert.equal(store.getState().books.reading.words[0].text, 'keep');
+});
+
+test('review intervals follow the forgetting curve', () => {
+  const now = Date.parse('2026-09-21T00:00:00.000Z');
+  let word = createWord({ text: 'curve', createdAt: new Date(now).toISOString() });
+  word = applyReview(word, 'good', now);
+  assert.equal(word.review.intervalMinutes, 20);
+  word = applyReview(word, 'good', now + 20 * 60 * 1000);
+  assert.equal(word.review.intervalMinutes, 60);
+  word = applyReview(word, 'again', now + 80 * 60 * 1000);
+  assert.equal(word.review.intervalMinutes, 10);
+  assert.equal(word.review.repetitions, 0);
+});
+
+test('due review order puts weaker words first', () => {
+  const now = Date.parse('2026-09-21T12:00:00.000Z');
+  const fresh = createWord({
+    text: 'fresh',
+    createdAt: new Date(now - 10 * 60 * 1000).toISOString(),
+    review: {
+      intervalMinutes: 90,
+      dueAt: new Date(now - 10 * 60 * 1000).toISOString(),
+      lastReviewedAt: new Date(now - 10 * 60 * 1000).toISOString(),
+      forgetCount: 0,
+      repetitions: 0,
+    },
+  });
+  const rusty = createWord({
+    text: 'rusty',
+    createdAt: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    review: {
+      intervalMinutes: 90,
+      dueAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      lastReviewedAt: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      forgetCount: 2,
+      repetitions: 0,
+    },
+  });
+  const state = emptyState();
+  state.books.reading.words = [fresh, rusty];
+  const queue = dueWords(state, 'reading', now);
+  assert.equal(queue[0].word.text, 'rusty');
+  assert.equal(queue[1].word.text, 'fresh');
 });

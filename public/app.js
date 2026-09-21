@@ -88,6 +88,76 @@ function isDue(word, now) {
   return Date.parse(word.review.dueAt) <= (now || Date.now());
 }
 
+const FORGETTING_CURVE_MINUTES = [
+  20,
+  60,
+  9 * 60,
+  24 * 60,
+  2 * 24 * 60,
+  6 * 24 * 60,
+  15 * 24 * 60,
+  31 * 24 * 60,
+];
+
+function applyReview(word, rating, now) {
+  const ts = now || Date.now();
+  const review = Object.assign({}, word.review);
+  review.lastReviewedAt = new Date(ts).toISOString();
+  review.reviewCount = (review.reviewCount || 0) + 1;
+  review.ease = Number(review.ease) || 2.5;
+
+  if (rating === 'again') {
+    review.forgetCount = (review.forgetCount || 0) + 1;
+    review.repetitions = 0;
+    review.ease = Math.max(1.3, review.ease - 0.2);
+    review.intervalMinutes = 10;
+    review.mastered = false;
+  } else if (rating === 'hard') {
+    review.ease = Math.max(1.3, review.ease - 0.15);
+    const step = Math.max(0, (review.repetitions || 0) - 1);
+    const base = FORGETTING_CURVE_MINUTES[Math.min(step, FORGETTING_CURVE_MINUTES.length - 1)];
+    review.intervalMinutes = Math.max(20, Math.round(base * 0.6));
+    review.mastered = false;
+  } else {
+    review.repetitions = (review.repetitions || 0) + 1;
+    review.ease = Math.min(2.8, review.ease + 0.05);
+    const step = Math.min(FORGETTING_CURVE_MINUTES.length - 1, Math.max(0, review.repetitions - 1));
+    let minutes = FORGETTING_CURVE_MINUTES[step];
+    if (review.repetitions > FORGETTING_CURVE_MINUTES.length) {
+      minutes = Math.round(FORGETTING_CURVE_MINUTES[FORGETTING_CURVE_MINUTES.length - 1] * (review.ease / 2.5));
+    }
+    review.intervalMinutes = Math.min(minutes, 60 * 24 * 60);
+    review.mastered = review.intervalMinutes >= 6 * 24 * 60;
+  }
+
+  review.dueAt = new Date(ts + review.intervalMinutes * 60 * 1000).toISOString();
+  return Object.assign({}, word, { review, updatedAt: new Date(ts).toISOString() });
+}
+
+function reviewRetention(word, now) {
+  const ts = now || Date.now();
+  const review = (word && word.review) || {};
+  const last = Date.parse(review.lastReviewedAt) || Date.parse(word && word.createdAt) || ts;
+  const elapsed = Math.max(0, ts - last);
+  const intervalMs = Math.max(10, Number(review.intervalMinutes) || 90) * 60 * 1000;
+  const forgets = Number(review.forgetCount) || 0;
+  const ease = Number(review.ease) || 2.5;
+  const stability = intervalMs * Math.max(0.8, ease / 2.5) / (1 + forgets * 0.35);
+  return Math.exp(-elapsed / Math.max(stability, 1));
+}
+
+function compareReviewItems(a, b, now) {
+  const wa = a && a.word ? a.word : a;
+  const wb = b && b.word ? b.word : b;
+  const ra = reviewRetention(wa, now);
+  const rb = reviewRetention(wb, now);
+  if (ra !== rb) return ra - rb;
+  const da = Date.parse((wa.review || {}).dueAt) || 0;
+  const db = Date.parse((wb.review || {}).dueAt) || 0;
+  if (da !== db) return da - db;
+  return String(wa.text || '').localeCompare(String(wb.text || ''));
+}
+
 function dueInBook(bookId) {
   const words = (((state.data || {}).books || {})[bookId] || {}).words || [];
   return words.filter(word => isDue(word)).length;
@@ -215,23 +285,12 @@ function createLocalApi() {
     },
     async reviewWord(bookId, id, rating) {
       const data = load();
-      const word = data.books[bookId].words.find(item => item.id === id);
-      const now = Date.now();
-      word.review.lastReviewedAt = new Date(now).toISOString();
-      word.review.reviewCount += 1;
-      if (rating === 'again') {
-        word.review.intervalMinutes = 60;
-        word.review.repetitions = 0;
-      } else if (rating === 'hard') {
-        word.review.intervalMinutes = 90;
-      } else {
-        word.review.intervalMinutes = word.review.repetitions ? Math.min(word.review.intervalMinutes * 2.5, 60 * 24 * 30) : 120;
-        word.review.repetitions += 1;
-        word.review.mastered = word.review.intervalMinutes >= 60 * 24 * 7;
-      }
-      word.review.dueAt = new Date(now + word.review.intervalMinutes * 60000).toISOString();
+      const list = data.books[bookId].words;
+      const index = list.findIndex(item => item.id === id);
+      if (index < 0) throw new Error('找不到单词');
+      list[index] = applyReview(list[index], rating);
       save(data);
-      return word;
+      return list[index];
     },
     async updateNotebook(bookId, text) {
       const data = load();
@@ -1687,13 +1746,14 @@ function collectReviewQueue(oneBook) {
       if (isDue(word)) queue.push({ bookId, word });
     });
   });
+  queue.sort((a, b) => compareReviewItems(a, b));
   return queue;
 }
 
 function openReview(oneBook) {
   const queue = collectReviewQueue(oneBook);
   if (!queue.length) {
-    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词加入后会在 1–2 小时内进入提醒。到点后点菜单栏图标或通知即可开始。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
   let index = 0;
@@ -1749,7 +1809,7 @@ function openReview(oneBook) {
     } else {
       ui.overlay.querySelector('#rv-next').addEventListener('click', () => {
         if (last) {
-          openOverlay(`<div class="modal"><h2>这轮复习完成</h2><p class="help">已记住进度。到期单词会继续按 1–2 小时提醒。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+          openOverlay(`<div class="modal"><h2>这轮复习完成</h2><p class="help">已按遗忘曲线记下下次时间。越熟的词间隔越长，生疏或点了「不认识」的会更快再见到。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
           return;
         }
         index += 1;
@@ -1766,6 +1826,7 @@ function openDictation() {
   const usingDue = queue.length > 0;
   if (!queue.length) {
     queue = currentWords().map(word => ({ bookId: state.bookId, word }));
+    queue.sort((a, b) => compareReviewItems(a, b));
   }
   if (!queue.length) {
     openOverlay(`<div class="modal"><h2>还没有可听写的单词</h2><p class="help">先在听力册加入单词，再来听写。有到期词时会优先听写到期的。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
@@ -1914,6 +1975,7 @@ function openPlayer() {
   }
   let index = 0;
   let paused = false;
+  let playToken = 0;
   state.speaking = true;
   const settings = state.data.settings || {};
   const repeat = Math.max(1, Number(settings.ttsRepeat) || 1);
@@ -1950,23 +2012,40 @@ function openPlayer() {
     ui.overlay.querySelector('#pl-gap').addEventListener('change', (event) => {
       persistGap(event.target.value);
     });
-    ui.overlay.querySelector('#pl-prev').addEventListener('click', () => { index = Math.max(0, index - 1); playCurrent(0); });
-    ui.overlay.querySelector('#pl-next').addEventListener('click', () => { index = Math.min(words.length - 1, index + 1); playCurrent(0); });
+    ui.overlay.querySelector('#pl-prev').addEventListener('click', () => goTo(index - 1));
+    ui.overlay.querySelector('#pl-next').addEventListener('click', () => goTo(index + 1));
     ui.overlay.querySelector('#pl-pause').addEventListener('click', () => {
       paused = !paused;
-      if (paused) stopSpeak();
+      playToken += 1;
+      stopSpeak();
+      if (paused) paint();
       else playCurrent(0);
-      paint();
     });
   }
 
+  function goTo(nextIndex) {
+    playToken += 1;
+    stopSpeak();
+    index = Math.max(0, Math.min(words.length - 1, nextIndex));
+    if (paused) {
+      paint();
+      speak(words[index].text);
+      return;
+    }
+    playCurrent(0);
+  }
+
   function playCurrent(times) {
+    const token = playToken;
     if (!state.speaking || paused) return;
     paint();
     speak(words[index].text, () => {
-      if (!state.speaking || paused) return;
+      if (token !== playToken || !state.speaking || paused) return;
       if (times + 1 < repeat) {
-        setTimeout(() => playCurrent(times + 1), gap);
+        setTimeout(() => {
+          if (token !== playToken || paused || !state.speaking) return;
+          playCurrent(times + 1);
+        }, gap);
         return;
       }
       if (index + 1 >= words.length) {
@@ -1975,7 +2054,10 @@ function openPlayer() {
         return;
       }
       index += 1;
-      setTimeout(() => playCurrent(0), gap);
+      setTimeout(() => {
+        if (token !== playToken || paused || !state.speaking) return;
+        playCurrent(0);
+      }, gap);
     });
   }
   playCurrent(0);
