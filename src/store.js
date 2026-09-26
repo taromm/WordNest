@@ -119,6 +119,7 @@ function migrate(data) {
     next.books[id] = Object.assign({}, incomingBooks[id] || {}, {
       words: rawWords.map(normalizeWord).filter(Boolean),
       notebook: String((incomingBooks[id] && incomingBooks[id].notebook) || ''),
+      notebookUpdatedAt: (incomingBooks[id] && incomingBooks[id].notebookUpdatedAt) || '',
     });
   }
   for (const key of Object.keys(incomingBooks)) {
@@ -215,6 +216,21 @@ function dueWords(state, bookId, now) {
 
 function dueCount(state, bookId, now) {
   return dueWords(state, bookId, now).length;
+}
+
+function chooseNotebook(localBook, incomingBook) {
+  const local = String((localBook && localBook.notebook) || '');
+  const incoming = String((incomingBook && incomingBook.notebook) || '');
+  const localAt = Date.parse((localBook && localBook.notebookUpdatedAt) || '') || 0;
+  const incomingAt = Date.parse((incomingBook && incomingBook.notebookUpdatedAt) || '') || 0;
+  if (incoming.trim() && local.trim()) {
+    if (incomingAt > localAt) return { notebook: incoming, notebookUpdatedAt: incomingBook.notebookUpdatedAt || '' };
+    if (localAt > incomingAt) return { notebook: local, notebookUpdatedAt: localBook.notebookUpdatedAt || '' };
+    if (incoming.length >= local.length) return { notebook: incoming, notebookUpdatedAt: incomingBook.notebookUpdatedAt || '' };
+    return { notebook: local, notebookUpdatedAt: localBook.notebookUpdatedAt || '' };
+  }
+  if (local.trim()) return { notebook: local, notebookUpdatedAt: (localBook && localBook.notebookUpdatedAt) || '' };
+  return { notebook: incoming, notebookUpdatedAt: (incomingBook && incomingBook.notebookUpdatedAt) || '' };
 }
 
 class Store {
@@ -387,9 +403,9 @@ class Store {
       summary.existing += result.existing.length;
     }
     for (const id of BOOKS) {
-      const incomingNote = String((((migrated.books || {})[id] || {}).notebook) || '');
-      const localNote = String((this.state.books[id].notebook) || '');
-      if (!localNote && incomingNote) this.state.books[id].notebook = incomingNote;
+      const picked = chooseNotebook(this.state.books[id], (migrated.books || {})[id]);
+      this.state.books[id].notebook = picked.notebook;
+      this.state.books[id].notebookUpdatedAt = picked.notebookUpdatedAt;
     }
     this.save();
     if (incoming && incoming.settings) {
@@ -407,9 +423,15 @@ class Store {
   importOverwrite(incoming) {
     const keepToken = this.state.settings.cloudToken || '';
     const keepGist = this.state.settings.cloudGistId || '';
+    const prevBooks = this.state.books;
     const migrated = migrate(incoming);
     migrated.settings.cloudToken = keepToken;
     migrated.settings.cloudGistId = keepGist || migrated.settings.cloudGistId || '';
+    for (const id of BOOKS) {
+      const picked = chooseNotebook(prevBooks[id], (migrated.books || {})[id]);
+      migrated.books[id].notebook = picked.notebook;
+      migrated.books[id].notebookUpdatedAt = picked.notebookUpdatedAt;
+    }
     this.state = migrated;
     this.save();
     let words = 0;
@@ -438,6 +460,7 @@ module.exports = {
   dueCount,
   reviewRetention,
   compareReviewItems,
+  chooseNotebook,
   FORGETTING_CURVE_MINUTES,
   normalizeTags,
 };

@@ -190,18 +190,33 @@ function createLocalApi() {
     },
   };
 
-  function load() {
+  let mem = null;
+  function normalizeLoaded(raw) {
     const base = JSON.parse(JSON.stringify(empty));
+    if (!raw || typeof raw !== 'object') return base;
+    const settings = Object.assign({}, base.settings, raw.settings || {});
+    const books = Object.assign({}, base.books, raw.books || {});
+    ['reading', 'listening', 'writing', 'speaking'].forEach((id) => {
+      const src = books[id] || {};
+      books[id] = Object.assign({}, src, {
+        words: Array.isArray(src.words) ? src.words : [],
+        notebook: String(src.notebook || ''),
+        notebookUpdatedAt: src.notebookUpdatedAt || '',
+      });
+    });
+    return Object.assign(base, raw, { settings, books });
+  }
+  function load() {
+    if (mem) return mem;
     try {
-      const raw = JSON.parse(localStorage.getItem(key) || 'null');
-      if (!raw || typeof raw !== 'object') return base;
-      raw.settings = Object.assign({}, base.settings, raw.settings || {});
-      return Object.assign(base, raw, { settings: raw.settings });
+      mem = normalizeLoaded(JSON.parse(localStorage.getItem(key) || 'null'));
     } catch (_) {
-      return base;
+      mem = JSON.parse(JSON.stringify(empty));
     }
+    return mem;
   }
   function save(data) {
+    mem = data;
     localStorage.setItem(key, JSON.stringify(data));
     return data;
   }
@@ -319,6 +334,7 @@ function createLocalApi() {
       const data = load();
       const keepToken = (data.settings || {}).cloudToken || '';
       const keepGist = (data.settings || {}).cloudGistId || '';
+      const prevBooks = data.books || {};
       const next = JSON.parse(JSON.stringify(emptyRendererState()));
       next.settings = Object.assign({}, next.settings, (incoming && incoming.settings) || {});
       next.settings.cloudToken = keepToken;
@@ -327,7 +343,8 @@ function createLocalApi() {
       ['reading', 'listening', 'writing', 'speaking'].forEach((id) => {
         const src = (((incoming || {}).books || {})[id] || {});
         const words = (src.words || []).filter(item => item && item.text);
-        next.books[id] = { words, notebook: String(src.notebook || '') };
+        const picked = chooseNotebook(prevBooks[id], src);
+        next.books[id] = { words, notebook: picked.notebook, notebookUpdatedAt: picked.notebookUpdatedAt };
       });
       save(next);
       let words = 0;
@@ -789,25 +806,91 @@ function speak(text, onend, voiceURI) {
 
 let scanPasteHandler = null;
 let notebookSaveTimer = null;
+let notebookSession = null;
+let notebookWriteChain = Promise.resolve();
 
-function currentNotebook() {
-  return String(((((state.data || {}).books || {})[state.bookId] || {}).notebook) || '');
+function currentNotebook(bookId) {
+  const id = bookId || state.bookId;
+  return String(((((state.data || {}).books || {})[id] || {}).notebook) || '');
 }
 
-async function persistNotebook(text) {
-  if (!api.updateNotebook) return;
-  const value = String(text || '');
-  await api.updateNotebook(state.bookId, value);
-  if (state.data && state.data.books && state.data.books[state.bookId]) {
-    state.data.books[state.bookId].notebook = value;
+function chooseNotebook(localBook, incomingBook) {
+  const local = String((localBook && localBook.notebook) || '');
+  const incoming = String((incomingBook && incomingBook.notebook) || '');
+  const localAt = Date.parse((localBook && localBook.notebookUpdatedAt) || '') || 0;
+  const incomingAt = Date.parse((incomingBook && incomingBook.notebookUpdatedAt) || '') || 0;
+  if (incoming.trim() && local.trim()) {
+    if (incomingAt > localAt) return { notebook: incoming, notebookUpdatedAt: incomingBook.notebookUpdatedAt || '' };
+    if (localAt > incomingAt) return { notebook: local, notebookUpdatedAt: localBook.notebookUpdatedAt || '' };
+    if (incoming.length >= local.length) return { notebook: incoming, notebookUpdatedAt: incomingBook.notebookUpdatedAt || '' };
+    return { notebook: local, notebookUpdatedAt: localBook.notebookUpdatedAt || '' };
   }
-  const btn = document.getElementById('btn-notebook');
-  if (btn) btn.classList.toggle('has-notes', Boolean(value.trim()));
+  if (local.trim()) return { notebook: local, notebookUpdatedAt: (localBook && localBook.notebookUpdatedAt) || '' };
+  return { notebook: incoming, notebookUpdatedAt: (incomingBook && incomingBook.notebookUpdatedAt) || '' };
+}
+
+function notebookBackupKey() {
+  return 'wordnest-notebook-bak-v1';
+}
+
+function writeNotebookBackup(bookId, text) {
+  const value = String(text || '');
+  if (!bookId || !value.trim()) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(notebookBackupKey()) || '{}') || {};
+    all[bookId] = { text: value, at: Date.now() };
+    localStorage.setItem(notebookBackupKey(), JSON.stringify(all));
+  } catch (_) { /* ignore quota */ }
+}
+
+function readNotebookBackup(bookId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(notebookBackupKey()) || '{}') || {};
+    return String((all[bookId] && all[bookId].text) || '');
+  } catch (_) {
+    return '';
+  }
+}
+
+function persistNotebookNow(text, opts) {
+  if (!api.updateNotebook) return Promise.resolve('');
+  const bookId = (opts && opts.bookId) || (notebookSession && notebookSession.bookId) || state.bookId;
+  const value = String(text || '');
+  const existing = currentNotebook(bookId);
+  if (!value.trim() && existing.trim() && !(opts && opts.allowEmpty)) {
+    return Promise.resolve(existing);
+  }
+  return api.updateNotebook(bookId, value).then((saved) => {
+    const next = String(saved != null ? saved : value);
+    if (state.data && state.data.books && state.data.books[bookId]) {
+      state.data.books[bookId].notebook = next;
+      state.data.books[bookId].notebookUpdatedAt = new Date().toISOString();
+    }
+    if (next.trim()) writeNotebookBackup(bookId, next);
+    const btn = document.getElementById('btn-notebook');
+    if (btn && bookId === state.bookId) btn.classList.toggle('has-notes', Boolean(next.trim()));
+    if (notebookSession && notebookSession.bookId === bookId) notebookSession.lastGood = next;
+    return next;
+  });
+}
+
+function persistNotebook(text, opts) {
+  const job = persistNotebookNow(text, opts);
+  notebookWriteChain = notebookWriteChain.then(() => job, () => job);
+  return job;
 }
 
 function notebookMarkdownToHtml(text) {
   const escaped = escapeHtml(text);
   return escaped.replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+}
+
+function notebookNodeIsBold(node) {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+  const tag = node.tagName.toLowerCase();
+  if (tag === 'b' || tag === 'strong') return true;
+  const weight = (node.style && node.style.fontWeight) || '';
+  return weight === 'bold' || Number(weight) >= 600;
 }
 
 function notebookHtmlToMarkdown(root) {
@@ -818,7 +901,7 @@ function notebookHtmlToMarkdown(root) {
     const tag = node.tagName.toLowerCase();
     if (tag === 'br') return '\n';
     const inner = Array.from(node.childNodes).map(walk).join('');
-    if (tag === 'b' || tag === 'strong') return inner ? `**${inner.replace(/^\*\*|\*\*$/g, '')}**` : '';
+    if (notebookNodeIsBold(node)) return inner ? `**${inner.replace(/^\*\*|\*\*$/g, '')}**` : '';
     if (tag === 'div' || tag === 'p' || tag === 'li' || tag === 'h1' || tag === 'h2' || tag === 'h3') {
       return inner + '\n';
     }
@@ -829,14 +912,46 @@ function notebookHtmlToMarkdown(root) {
 
 function readNotebookValue(box) {
   if (!box) return null;
-  if (box.getAttribute && box.getAttribute('contenteditable') === 'true') return notebookHtmlToMarkdown(box);
+  if (box.getAttribute && box.getAttribute('contenteditable') === 'true') {
+    const md = notebookHtmlToMarkdown(box);
+    const plain = String(box.innerText || box.textContent || '').replace(/\u00a0/g, ' ').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '');
+    if (md.trim()) {
+      const mdPlain = md.replace(/\*+/g, '').replace(/\s+/g, '');
+      const visPlain = plain.replace(/\s+/g, '');
+      if (visPlain && mdPlain.length < visPlain.length * 0.5) return plain;
+      return md;
+    }
+    return plain;
+  }
   if ('value' in box) return box.value;
   return box.textContent || '';
 }
 
+function notebookEditorHasText(box) {
+  if (!box) return false;
+  return Boolean(String(box.innerText || box.textContent || '').replace(/\u00a0/g, ' ').trim());
+}
+
+function flushOpenNotebook() {
+  const box = ui.overlay && ui.overlay.querySelector('#nb-text');
+  if (!box || !notebookSession) return Promise.resolve('');
+  try { box.blur(); } catch (_) { /* ignore */ }
+  const value = readNotebookValue(box);
+  const allowEmpty = notebookSession.dirty && !notebookEditorHasText(box);
+  return persistNotebook(value, { bookId: notebookSession.bookId, allowEmpty });
+}
+
 function openNotebook() {
   const meta = bookMeta(state.bookId);
-  const text = currentNotebook();
+  let text = currentNotebook();
+  if (!text.trim()) {
+    const backup = readNotebookBackup(state.bookId);
+    if (backup.trim()) {
+      text = backup;
+      persistNotebook(text, { bookId: state.bookId }).catch(() => {});
+    }
+  }
+  notebookSession = { bookId: state.bookId, original: text, lastGood: text, dirty: false };
   openOverlay(`
     <div class="modal notebook-modal">
       <div class="notebook-head">
@@ -863,21 +978,38 @@ function openNotebook() {
   else box.innerHTML = '';
 
   const markEmpty = () => {
-    box.classList.toggle('is-empty', !readNotebookValue(box).trim());
+    box.classList.toggle('is-empty', !readNotebookValue(box).trim() && !notebookEditorHasText(box));
   };
   markEmpty();
 
   const saveNow = async () => {
     status.textContent = '正在保存…';
     try {
-      await persistNotebook(readNotebookValue(box));
+      const box = ui.overlay.querySelector('#nb-text');
+      if (box) {
+        try { box.blur(); } catch (_) { /* ignore */ }
+      }
+      const value = box ? readNotebookValue(box) : '';
+      const allowEmpty = notebookSession && notebookSession.dirty && !notebookEditorHasText(box);
+      await persistNotebook(value, { bookId: notebookSession && notebookSession.bookId, allowEmpty });
+      if (notebookSession) {
+        notebookSession.original = currentNotebook(notebookSession.bookId);
+        notebookSession.dirty = false;
+      }
       status.textContent = '已保存';
     } catch (err) {
       status.textContent = err.message || '保存失败';
     }
   };
   box.addEventListener('input', () => {
+    const value = readNotebookValue(box);
+    const unchanged = notebookSession && value === notebookSession.original;
+    if (notebookSession) notebookSession.dirty = !unchanged;
     markEmpty();
+    if (unchanged) {
+      status.textContent = '已保存';
+      return;
+    }
     status.textContent = '未保存';
     clearTimeout(notebookSaveTimer);
     notebookSaveTimer = setTimeout(saveNow, 700);
@@ -909,12 +1041,12 @@ function openNotebook() {
 }
 
 function closeOverlay() {
-  const box = ui.overlay && ui.overlay.querySelector('#nb-text');
-  const pendingNote = box ? readNotebookValue(box) : null;
+  const pending = flushOpenNotebook();
   if (notebookSaveTimer) {
     clearTimeout(notebookSaveTimer);
     notebookSaveTimer = null;
   }
+  notebookSession = null;
   state.speaking = false;
   scanPasteHandler = null;
   stopSpeak();
@@ -922,10 +1054,11 @@ function closeOverlay() {
   ui.overlay.hidden = true;
   ui.overlay.setAttribute('hidden', '');
   ui.overlay.innerHTML = '';
-  if (pendingNote != null) persistNotebook(pendingNote).catch(() => {});
+  pending.catch(() => {});
 }
 
 function openOverlay(html) {
+  flushOpenNotebook();
   ui.overlay.innerHTML = html;
   ui.overlay.hidden = false;
   ui.overlay.removeAttribute('hidden');
@@ -2478,6 +2611,10 @@ function bindChrome() {
   ui.overlay.addEventListener('click', (event) => {
     if (event.target === ui.overlay) closeOverlay();
   });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushOpenNotebook();
+  });
+  window.addEventListener('pagehide', () => { flushOpenNotebook(); });
   if (!api.desktop && ui.dataHint) {
     ui.dataHint.textContent = 'Gist 和 Token 在设置里填一次。之后电脑点「上传云端」，手机点「下载云端」。';
   }

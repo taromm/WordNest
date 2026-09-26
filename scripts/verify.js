@@ -65,6 +65,12 @@ const ranked = emptyState();
 ranked.books.reading.words = [fresh, rusty];
 assert.strictEqual(dueWords(ranked, 'reading', now + 60 * 60 * 1000)[0].word.text, 'rusty');
 
+store.updateNotebook('listening', 'keep notes');
+store.importOverwrite({
+  books: { listening: { words: [{ text: 'x' }], notebook: '' } },
+});
+assert.strictEqual(store.getState().books.listening.notebook, 'keep notes');
+
 assert.deepStrictEqual(
   require('../src/extract-markers').extractScanItems('stem from, neglect, overlook, underestimate'),
   ['stem from', 'neglect', 'overlook', 'underestimate']

@@ -171,3 +171,18 @@ test('due review order puts weaker words first', () => {
   assert.equal(queue[0].word.text, 'rusty');
   assert.equal(queue[1].word.text, 'fresh');
 });
+
+test('overwrite download does not wipe a local notebook with empty cloud notes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordnest-'));
+  const store = new Store(path.join(dir, 'data.json'));
+  store.state = emptyState();
+  store.addWords('listening', [{ text: 'keep' }]);
+  store.updateNotebook('listening', '听力结构');
+  store.importOverwrite({
+    books: {
+      listening: { words: [{ text: 'keep' }], notebook: '' },
+    },
+  });
+  assert.equal(store.getState().books.listening.notebook, '听力结构');
+  assert.equal(store.getState().books.listening.words[0].text, 'keep');
+});
