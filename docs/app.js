@@ -941,6 +941,105 @@ function flushOpenNotebook() {
   return persistNotebook(value, { bookId: notebookSession.bookId, allowEmpty });
 }
 
+function glossForExport(word) {
+  return senseList(word)
+    .map(item => String(item.text || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('；');
+}
+
+function exportWordLines(words, mode) {
+  return (words || []).slice()
+    .sort((a, b) => String(a.text || '').localeCompare(String(b.text || ''), 'en', { sensitivity: 'base' }))
+    .map((word) => {
+      const text = String(word.text || '').trim();
+      if (!text) return '';
+      if (mode !== 'bilingual') return text;
+      const gloss = glossForExport(word);
+      return gloss ? `${text}\t${gloss}` : text;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+async function copyPlainText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) { /* fall through */ }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.left = '-9999px';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+  area.remove();
+  return ok;
+}
+
+function downloadPlainText(filename, text) {
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+function openExport() {
+  const words = currentWords();
+  const meta = bookMeta(state.bookId);
+  if (!words.length) {
+    openOverlay(`<div class="modal"><h2>这一册还没有单词</h2><p class="help">先加入单词，再导出「${escapeHtml(meta.name)}」。</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
+    return;
+  }
+  let mode = 'bilingual';
+  function body() { return exportWordLines(words, mode); }
+  openOverlay(`
+    <div class="modal">
+      <h2>导出${escapeHtml(meta.name)}</h2>
+      <p class="help">这一册共 ${words.length} 个单词，按字母排成一行一个。选了中文时，释义跟在同一行后面，中间是制表符，贴进表格或 Anki 会分成两列。</p>
+      <div class="scan-mode" id="export-mode">
+        <label><input type="radio" name="export-mode" value="en"><span><b>只有英文</b><small>一行一个单词</small></span></label>
+        <label><input type="radio" name="export-mode" value="bilingual" checked><span><b>英文 + 中文</b><small>释义写在同一行后面</small></span></label>
+      </div>
+      <textarea id="export-preview" class="export-preview" readonly></textarea>
+      <p class="help" id="export-status">复制后可以直接粘贴到笔记或表格。</p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close>关闭</button>
+        <button type="button" class="secondary" id="export-download">下载文本</button>
+        <button type="button" class="primary" id="export-copy">复制全部</button>
+      </div>
+    </div>
+  `);
+  const preview = ui.overlay.querySelector('#export-preview');
+  const status = ui.overlay.querySelector('#export-status');
+  const refresh = () => { preview.value = body(); };
+  refresh();
+  ui.overlay.querySelectorAll('input[name="export-mode"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      mode = input.value === 'en' ? 'en' : 'bilingual';
+      refresh();
+      status.textContent = '复制后可以直接粘贴到笔记或表格。';
+    });
+  });
+  ui.overlay.querySelector('#export-copy').addEventListener('click', async () => {
+    const ok = await copyPlainText(body());
+    status.textContent = ok ? `已复制 ${words.length} 行。` : '复制失败，可以选中预览文字手动复制，或改用下载。';
+  });
+  ui.overlay.querySelector('#export-download').addEventListener('click', () => {
+    const suffix = mode === 'en' ? '英文' : '英中';
+    downloadPlainText(`词栖-${meta.name}-${suffix}.txt`, body());
+    status.textContent = '已开始下载文本文件。';
+  });
+}
+
 function openNotebook() {
   const meta = bookMeta(state.bookId);
   let text = currentNotebook();
@@ -2568,6 +2667,7 @@ function bindChrome() {
     if (button.id === 'btn-add') openWordForm();
     else if (button.id === 'btn-scan') openScan();
     else if (button.id === 'btn-manage') openBatchManage();
+    else if (button.id === 'btn-export') openExport();
     else if (button.id === 'btn-notebook') openNotebook();
     else if (button.id === 'btn-speak-all') openPlayer();
     else if (button.id === 'btn-dictation') openDictation();
