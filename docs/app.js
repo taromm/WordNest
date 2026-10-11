@@ -1067,7 +1067,7 @@ function openNotebook() {
       <div class="notebook-tools">
         <button type="button" id="nb-bold" class="nb-bold" title="标粗 Ctrl+B"><b>B</b> 标粗</button>
       </div>
-      <div id="nb-text" class="notebook-input" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" data-placeholder="在这里写这一册的笔记…"></div>
+      <div id="nb-text" class="notebook-input" contenteditable="true" spellcheck="false" autocorrect="off" autocapitalize="off" autocomplete="off" role="textbox" aria-multiline="true" data-placeholder="在这里写这一册的笔记…"></div>
     </div>
   `);
   const box = ui.overlay.querySelector('#nb-text');
@@ -1076,19 +1076,25 @@ function openNotebook() {
   if (text.trim()) box.innerHTML = notebookMarkdownToHtml(text);
   else box.innerHTML = '';
 
+  let composing = false;
   const markEmpty = () => {
-    box.classList.toggle('is-empty', !readNotebookValue(box).trim() && !notebookEditorHasText(box));
+    if (composing) return;
+    box.classList.toggle('is-empty', !notebookEditorHasText(box));
   };
   markEmpty();
 
+  const scheduleSave = () => {
+    clearTimeout(notebookSaveTimer);
+    notebookSaveTimer = setTimeout(saveNow, 1200);
+  };
   const saveNow = async () => {
+    if (composing) {
+      scheduleSave();
+      return;
+    }
     status.textContent = '正在保存…';
     try {
-      const box = ui.overlay.querySelector('#nb-text');
-      if (box) {
-        try { box.blur(); } catch (_) { /* ignore */ }
-      }
-      const value = box ? readNotebookValue(box) : '';
+      const value = readNotebookValue(box);
       const allowEmpty = notebookSession && notebookSession.dirty && !notebookEditorHasText(box);
       await persistNotebook(value, { bookId: notebookSession && notebookSession.bookId, allowEmpty });
       if (notebookSession) {
@@ -1100,18 +1106,23 @@ function openNotebook() {
       status.textContent = err.message || '保存失败';
     }
   };
-  box.addEventListener('input', () => {
-    const value = readNotebookValue(box);
-    const unchanged = notebookSession && value === notebookSession.original;
-    if (notebookSession) notebookSession.dirty = !unchanged;
+  const noteChanged = () => {
+    if (composing) return;
+    if (notebookSession) notebookSession.dirty = true;
     markEmpty();
-    if (unchanged) {
-      status.textContent = '已保存';
-      return;
-    }
     status.textContent = '未保存';
+    scheduleSave();
+  };
+  box.addEventListener('compositionstart', () => {
+    composing = true;
     clearTimeout(notebookSaveTimer);
-    notebookSaveTimer = setTimeout(saveNow, 700);
+  });
+  box.addEventListener('compositionend', () => {
+    composing = false;
+    noteChanged();
+  });
+  box.addEventListener('input', () => {
+    noteChanged();
   });
   box.addEventListener('paste', (event) => {
     event.preventDefault();
