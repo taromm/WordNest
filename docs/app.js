@@ -2285,14 +2285,35 @@ function collectReviewQueue(oneBook) {
 
 function openWritingSpellReview(queue, spellMode) {
   let index = 0;
-  let phase = spellMode ? 'ask' : 'read';
+  let phase = spellMode ? 'ask' : 'recall';
   let typed = '';
   let correct = false;
   let afterShow = 'retry';
   let misses = 0;
   let loadToken = 0;
   let spellSave = Promise.resolve();
+  let enterArmsOnKeyup = false;
   const showSeconds = 5;
+
+  function bindEnter(action, fromEnter) {
+    clearWritingShowTimer();
+    let ready = !fromEnter;
+    if (fromEnter) {
+      writingShowKeyUp = (event) => {
+        if (event.key !== 'Enter') return;
+        ready = true;
+        document.removeEventListener('keyup', writingShowKeyUp);
+        writingShowKeyUp = null;
+      };
+      document.addEventListener('keyup', writingShowKeyUp);
+    }
+    writingShowKey = (event) => {
+      if (event.key !== 'Enter' || event.repeat || !ready) return;
+      event.preventDefault();
+      action();
+    };
+    document.addEventListener('keydown', writingShowKey);
+  }
 
   function commit(item, outcome) {
     const next = applySpellOutcome(item.word, outcome);
@@ -2322,13 +2343,14 @@ function openWritingSpellReview(queue, spellMode) {
   }
 
   function goNext() {
+    clearWritingShowTimer();
     if (index >= queue.length - 1) {
       phase = 'done';
       openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">进度环满的词之后不会再出现。不熟的词会排在明天复习的最前面。</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
       return;
     }
     index += 1;
-    phase = spellMode ? 'ask' : 'read';
+    phase = spellMode ? 'ask' : 'recall';
     typed = '';
     correct = false;
     misses = 0;
@@ -2344,7 +2366,8 @@ function openWritingSpellReview(queue, spellMode) {
       return;
     }
     if (index >= queue.length) index = 0;
-    phase = spellMode ? 'ask' : 'read';
+    enterArmsOnKeyup = false;
+    phase = spellMode ? 'ask' : 'recall';
     typed = '';
     correct = false;
     misses = 0;
@@ -2404,12 +2427,36 @@ function openWritingSpellReview(queue, spellMode) {
       return;
     }
     const senses = senseList(item.word);
-    if (!spellMode) {
+    if (!spellMode && phase === 'recall') {
+      const recallMeanings = senses.length
+        ? senses.map(sense => `<p class="meaning ${sense.label === '雅思常考' ? 'ielts' : 'other'}"><span class="sense-label">${escapeHtml(sense.label)}</span>${escapeHtml(maskHeadword(sense.text, item.word.text))}</p>`).join('')
+        : '<p class="meaning">还没有释义，复习时可以补上。</p>';
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
             <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
-            ${spellRingHtml(item.word)}
+            ${recallMeanings}
+            <p class="help">按回车看单词</p>
+            <div class="modal-actions" style="justify-content:center">
+              <button type="button" class="ghost" data-close>结束</button>
+            </div>
+          </div>
+        </div>
+      `);
+      bindEnter(() => {
+        if (phase !== 'recall') return;
+        phase = 'judge';
+        paint();
+      }, enterArmsOnKeyup);
+      enterArmsOnKeyup = false;
+      return;
+    }
+    if (!spellMode && phase === 'judge') {
+      clearWritingShowTimer();
+      openOverlay(`
+        <div class="modal">
+          <div class="review-card writing-spell">
+            <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
             <div class="review-word">${escapeHtml(item.word.text)}</div>
             <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
@@ -2422,11 +2469,44 @@ function openWritingSpellReview(queue, spellMode) {
         </div>
       `);
       ui.overlay.querySelector('#sp-know').addEventListener('click', () => {
+        const before = spellProgressOf(item.word);
         commit(item, 'hit');
-        goNext();
+        if (spellProgressOf(item.word) <= before) {
+          enterArmsOnKeyup = false;
+          goNext();
+          return;
+        }
+        phase = 'gain';
+        paint();
       });
       ui.overlay.querySelector('#sp-unsure').addEventListener('click', () => parkUnfamiliar(item));
       speak(item.word.text);
+      return;
+    }
+    if (!spellMode && phase === 'gain') {
+      const full = spellProgressOf(item.word) >= 6;
+      openOverlay(`
+        <div class="modal">
+          <div class="review-card writing-spell">
+            <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
+            ${spellRingHtml(item.word)}
+            <p class="dictation-result ok">${full ? '进度已满，之后不再复习' : '进度增加了'}</p>
+            <div class="review-word">${escapeHtml(item.word.text)}</div>
+            <p class="help">按回车继续</p>
+            <div class="modal-actions" style="justify-content:center">
+              <button type="button" class="primary" id="sp-continue">继续</button>
+              <button type="button" class="ghost" data-close>结束</button>
+            </div>
+          </div>
+        </div>
+      `);
+      const leave = (fromEnter) => {
+        if (phase !== 'gain') return;
+        enterArmsOnKeyup = Boolean(fromEnter);
+        goNext();
+      };
+      ui.overlay.querySelector('#sp-continue').addEventListener('click', () => leave(false));
+      bindEnter(() => leave(true), false);
       return;
     }
     if (phase === 'show') {
@@ -2546,7 +2626,7 @@ function openWritingReview() {
     openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
-  openOverlay(`<div class="modal"><h2>开始写作复习</h2><p class="help">拼写：看释义把单词拼出来。不拼写：看单词后选认识或不熟。不熟会排到这次最后，明天排在最前。进度环满了就不再复习。</p><div class="modal-actions"><button type="button" class="primary" id="mode-spell">拼写</button><button type="button" class="secondary" id="mode-read">不拼写</button><button type="button" class="ghost" data-close>取消</button></div></div>`);
+  openOverlay(`<div class="modal"><h2>开始写作复习</h2><p class="help">拼写：看释义把单词拼出来。不拼写：先只看释义，回车后再看单词，选认识或不熟。认识并且进度增加时会出示进度环。不熟会排到这次最后，明天排在最前。</p><div class="modal-actions"><button type="button" class="primary" id="mode-spell">拼写</button><button type="button" class="secondary" id="mode-read">不拼写</button><button type="button" class="ghost" data-close>取消</button></div></div>`);
   ui.overlay.querySelector('#mode-spell').addEventListener('click', () => openWritingSpellReview(queue, true));
   ui.overlay.querySelector('#mode-read').addEventListener('click', () => openWritingSpellReview(queue, false));
 }
