@@ -2315,6 +2315,32 @@ function openWritingSpellReview(queue, spellMode) {
     document.addEventListener('keydown', writingShowKey);
   }
 
+  function bindJudgeKeys(onKnow, onUnfamiliar, fromEnter) {
+    clearWritingShowTimer();
+    let ready = !fromEnter;
+    if (fromEnter) {
+      writingShowKeyUp = (event) => {
+        if (event.key !== 'Enter') return;
+        ready = true;
+        document.removeEventListener('keyup', writingShowKeyUp);
+        writingShowKeyUp = null;
+      };
+      document.addEventListener('keyup', writingShowKeyUp);
+    }
+    writingShowKey = (event) => {
+      if (event.repeat) return;
+      if (event.key === 'CapsLock' || event.code === 'CapsLock') {
+        event.preventDefault();
+        onUnfamiliar();
+        return;
+      }
+      if (event.key !== 'Enter' || !ready) return;
+      event.preventDefault();
+      onKnow();
+    };
+    document.addEventListener('keydown', writingShowKey);
+  }
+
   function commit(item, outcome) {
     const next = applySpellOutcome(item.word, outcome);
     item.word.review = next.review;
@@ -2484,7 +2510,10 @@ function openWritingSpellReview(queue, spellMode) {
       `);
       ui.overlay.querySelector('#sp-know').addEventListener('click', () => markKnown(false));
       ui.overlay.querySelector('#sp-unsure').addEventListener('click', () => parkUnfamiliar(item));
-      bindEnter(() => markKnown(true), fromEnter);
+      bindJudgeKeys(() => markKnown(true), () => {
+        if (phase !== 'judge') return;
+        parkUnfamiliar(item);
+      }, fromEnter);
       speak(item.word.text);
       return;
     }
