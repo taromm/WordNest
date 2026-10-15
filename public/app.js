@@ -556,10 +556,102 @@ function examplePickerHtml(word) {
   if (!senses.length) return '';
   return `<details class="example-details">
     <summary>看例句</summary>
-    <p class="example-hint">先点一个意思，再给出例句</p>
-    <div class="sense-picks">${senses.map(item => `<button type="button" class="sense-pick" data-sense="${escapeHtml(item.text)}">${escapeHtml(item.label)}：${escapeHtml(item.text)}</button>`).join('')}</div>
+    <p class="example-hint">点一个意思，只看这个意思对应的例句</p>
+    <div class="sense-picks">${senses.map((item, index) => `<button type="button" class="sense-pick${index === 0 ? ' active' : ''}" data-sense="${escapeHtml(item.text)}">${escapeHtml(item.label)}：${escapeHtml(item.text)}</button>`).join('')}</div>
     <div class="example-out" hidden></div>
   </details>`;
+}
+
+function localSenseTokens(sense) {
+  return String(sense || '')
+    .split(/[，,；;、。./|｜\s]+/)
+    .map(item => item.replace(/^(n|v|vt|vi|adj|adv|prep|conj|pron|num|art|abbr)\.?$/i, '').trim())
+    .filter(item => item && item.length >= 2 && /[\u4e00-\u9fff]/.test(item));
+}
+
+function localPickExamples(examples, sense) {
+  const list = [];
+  const seen = new Set();
+  (examples || []).forEach((item) => {
+    const sentence = String((item && item.sentence) || '').trim();
+    const key = sentence.toLowerCase();
+    if (!sentence || seen.has(key)) return;
+    seen.add(key);
+    list.push({
+      sentence,
+      translation: String((item && item.translation) || '').trim(),
+      sense: String((item && item.sense) || '').trim(),
+    });
+  });
+  const tokens = localSenseTokens(sense);
+  if (!tokens.length) return list.slice(0, 3);
+  return list.map((item) => {
+    const hay = `${item.translation} ${item.sense}`;
+    let score = 0;
+    tokens.forEach((token) => {
+      if (hay.includes(token)) score += token.length;
+    });
+    return { item, score };
+  }).filter(row => row.score > 0).sort((a, b) => b.score - a.score).slice(0, 3).map(row => row.item);
+}
+
+function storedExamples(word) {
+  const list = Array.isArray(word && word.examples) ? word.examples.filter(item => item && item.sentence) : [];
+  if (list.length) return list;
+  const raw = String((word && word.example) || '').trim();
+  if (!raw) return [];
+  const parts = raw.split(/\s*／\s*/);
+  return [{ sentence: parts[0], translation: parts.slice(1).join('／'), sense: '' }];
+}
+
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function wordForms(word) {
+  const base = String(word || '').trim();
+  if (!base) return [];
+  if (/\s/.test(base)) return [base];
+  const forms = [base];
+  if (/[^aeiou]y$/i.test(base)) {
+    const stem = base.slice(0, -1);
+    forms.push(`${stem}ies`, `${stem}ied`, `${base}ing`);
+  } else if (/e$/i.test(base)) {
+    forms.push(`${base}d`, `${base}s`, `${base.slice(0, -1)}ing`);
+  } else {
+    forms.push(`${base}s`, `${base}es`, `${base}ed`, `${base}ing`);
+  }
+  return forms;
+}
+
+function maskHeadword(sentence, word) {
+  const forms = wordForms(word).sort((a, b) => b.length - a.length);
+  let next = String(sentence || '');
+  forms.forEach((form) => {
+    next = next.replace(new RegExp(`\\b${escapeRegExp(form)}\\b`, 'ig'), '______');
+  });
+  return next;
+}
+
+function exampleBlocksHtml(list, maskWord) {
+  return (list || []).map((item) => {
+    const sentence = maskWord ? maskHeadword(item.sentence, maskWord) : item.sentence;
+    const translation = maskWord ? maskHeadword(item.translation, maskWord) : item.translation;
+    return `<div class="ex-block"><p class="ex-en">${escapeHtml(sentence)}</p>${translation ? `<p class="ex-zh">${escapeHtml(translation)}</p>` : ''}</div>`;
+  }).join('');
+}
+
+async function examplesForSense(word, sense) {
+  let matches = [];
+  if (api.lookupExamples) {
+    try {
+      const result = await api.lookupExamples(word.text, sense || '');
+      matches = (result && result.matches) || [];
+      if (!matches.length && result && result.picked) matches = [result.picked];
+    } catch (_) { /* use saved examples */ }
+  }
+  if (!matches.length) matches = localPickExamples(storedExamples(word), sense || '');
+  return matches;
 }
 
 function bindExamplePanel(root, word) {
@@ -568,20 +660,16 @@ function bindExamplePanel(root, word) {
     btn.addEventListener('click', async () => {
       const out = root.querySelector('.example-out');
       if (!out) return;
+      root.querySelectorAll('.sense-pick').forEach(el => el.classList.toggle('active', el === btn));
       out.hidden = false;
-      out.textContent = '正在找例句…';
+      out.textContent = '正在找这个意思的例句…';
       try {
-        let picked = null;
-        if (api.lookupExamples) {
-          const result = await api.lookupExamples(word.text, btn.dataset.sense);
-          picked = result && result.picked;
-        }
-        if (!picked && word.examples && word.examples[0]) picked = word.examples[0];
-        if (!picked) {
+        const matches = await examplesForSense(word, btn.dataset.sense);
+        if (!matches.length) {
           out.textContent = '暂时没有找到这个意思的例句。';
           return;
         }
-        out.innerHTML = `<p class="ex-en">${escapeHtml(picked.sentence)}</p>${picked.translation ? `<p class="ex-zh">${escapeHtml(picked.translation)}</p>` : ''}`;
+        out.innerHTML = exampleBlocksHtml(matches);
       } catch (err) {
         out.textContent = err.message || '例句加载失败';
       }
@@ -2055,10 +2143,146 @@ function collectReviewQueue(oneBook) {
   return queue;
 }
 
+function openWritingSpellReview(queue) {
+  let index = 0;
+  let phase = 'ask';
+  let typed = '';
+  let correct = false;
+  let loadToken = 0;
+
+  async function fillSpellExamples(word, sense, token) {
+    const box = ui.overlay.querySelector('#spell-examples');
+    if (!box) return;
+    box.textContent = '正在找可参考的例句…';
+    const matches = await examplesForSense(word, sense || '');
+    if (token !== loadToken) return;
+    const current = ui.overlay.querySelector('#spell-examples');
+    if (!current) return;
+    if (!matches.length) {
+      current.textContent = '这条释义暂时没有例句，可以按中文意思来拼。';
+      return;
+    }
+    current.innerHTML = exampleBlocksHtml(matches, word.text);
+  }
+
+  function paint() {
+    const item = queue[index];
+    const last = index >= queue.length - 1;
+    const senses = senseList(item.word);
+    if (phase === 'ask') {
+      const token = loadToken + 1;
+      loadToken = token;
+      openOverlay(`
+        <div class="modal">
+          <div class="review-card">
+            <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
+            <p class="dictation-prompt">根据释义拼出英文。例句里的单词已遮住，可以换一条释义看不同例句。</p>
+            ${meaningHtml(item.word)}
+            ${senses.length ? `<div class="sense-picks">${senses.map((sense, senseIndex) => `<button type="button" class="sense-pick${senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}">${escapeHtml(sense.label)}：${escapeHtml(sense.text)}</button>`).join('')}</div>` : ''}
+            <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
+            <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="拼写这个词">
+            <div class="modal-actions" style="justify-content:center">
+              <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+              <button type="button" class="ghost" data-close>结束</button>
+              <button type="button" class="ghost" id="sp-skip">不会</button>
+              <button type="button" class="primary" id="sp-submit">提交</button>
+            </div>
+          </div>
+        </div>
+      `);
+      const input = ui.overlay.querySelector('#sp-input');
+      input.focus();
+      const reveal = (value) => {
+        typed = String(value || '').trim();
+        correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
+        phase = 'show';
+        paint();
+      };
+      ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
+        if (index === 0) return;
+        index -= 1;
+        phase = 'ask';
+        typed = '';
+        correct = false;
+        paint();
+      });
+      ui.overlay.querySelector('#sp-submit').addEventListener('click', () => reveal(input.value));
+      ui.overlay.querySelector('#sp-skip').addEventListener('click', () => reveal(''));
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          reveal(input.value);
+        }
+      });
+      ui.overlay.querySelectorAll('.sense-pick').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          ui.overlay.querySelectorAll('.sense-pick').forEach(el => el.classList.toggle('active', el === btn));
+          fillSpellExamples(item.word, btn.dataset.sense, token);
+        });
+      });
+      fillSpellExamples(item.word, (senses[0] && senses[0].text) || '', token);
+      return;
+    }
+
+    openOverlay(`
+      <div class="modal">
+        <div class="review-card">
+          <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
+          <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看答案，再判断')}</p>
+          ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
+          <div class="review-word">${escapeHtml(item.word.text)}</div>
+          <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+          ${meaningHtml(item.word)}
+          ${examplePickerHtml(item.word)}
+          <div class="modal-actions" style="justify-content:center">
+            <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+            <button type="button" class="ghost" data-close>结束</button>
+            <button type="button" class="secondary" id="sp-speak">发音</button>
+            <button type="button" class="danger" id="rv-again">不认识</button>
+            <button type="button" class="secondary" id="rv-hard">模糊</button>
+            <button type="button" class="primary" id="rv-good">认识</button>
+          </div>
+        </div>
+      </div>
+    `);
+    bindExamplePanel(ui.overlay, item.word);
+    ui.overlay.querySelector('#sp-speak').addEventListener('click', () => speak(item.word.text));
+    ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
+      if (index === 0) return;
+      index -= 1;
+      phase = 'ask';
+      typed = '';
+      correct = false;
+      paint();
+    });
+    const rate = async (rating) => {
+      await api.reviewWord(item.bookId, item.word.id, rating);
+      await reload();
+      if (last) {
+        openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">已按遗忘曲线记下下次时间。可以随时再打开写作册继续拼写。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+        return;
+      }
+      index += 1;
+      phase = 'ask';
+      typed = '';
+      correct = false;
+      paint();
+    };
+    ui.overlay.querySelector('#rv-again').addEventListener('click', () => rate('again'));
+    ui.overlay.querySelector('#rv-hard').addEventListener('click', () => rate('hard'));
+    ui.overlay.querySelector('#rv-good').addEventListener('click', () => rate('good'));
+  }
+  paint();
+}
+
 function openReview(oneBook) {
   const queue = collectReviewQueue(oneBook);
   if (!queue.length) {
     openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    return;
+  }
+  if (oneBook && state.bookId === 'writing') {
+    openWritingSpellReview(queue);
     return;
   }
   let index = 0;

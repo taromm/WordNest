@@ -425,7 +425,9 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   line-height: 1.45;
 }
 .sense-pick:hover { background: #ffe9b8; }
+.sense-pick.active { background: #ffe9b8; border-color: rgba(196, 146, 64, .7); }
 .example-out { margin-top: 10px; padding: 10px 12px; background: #fff; border-radius: 14px; border: 1px dashed var(--gold); }
+.ex-block + .ex-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .ex-en { margin: 0; font-family: var(--serif); font-size: 16px; }
 .ex-zh { margin: 6px 0 0; color: var(--mute); }
 .meta { margin-top: 6px; color: var(--mute); font-size: 12px; }

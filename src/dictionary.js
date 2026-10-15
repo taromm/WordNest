@@ -119,6 +119,72 @@ function fromYoudaoJsonapi(data, query) {
   };
 }
 
+function asArray(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function stripTags(text) {
+  return cleanSense(String(text || '').replace(/<[^>]+>/g, ''));
+}
+
+function extractCollinsExamples(data) {
+  const out = [];
+  asArray((((data || {}).collins || {}).collins_entries)).forEach((block) => {
+    asArray((((block || {}).entries || {}).entry)).forEach((entry) => {
+      asArray(entry && entry.tran_entry).forEach((row) => {
+        const sense = stripTags(row && row.tran);
+        asArray((((row || {}).exam_sents || {}).sent)).forEach((sent) => {
+          const sentence = stripTags(sent && (sent.eng_sent || sent.engSent));
+          const translation = stripTags(sent && (sent.chn_sent || sent.chnSent));
+          if (sentence) out.push({ sentence, translation, sense });
+        });
+      });
+    });
+  });
+  return out;
+}
+
+function dedupeExamples(list) {
+  const seen = new Set();
+  return (list || []).filter((item) => {
+    const key = String(item.sentence || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function senseTokens(sense) {
+  return String(sense || '')
+    .replace(/<[^>]+>/g, '')
+    .split(/[，,；;、。./|｜\s]+/)
+    .map(item => item.replace(/^(n|v|vt|vi|adj|adv|prep|conj|pron|num|art|abbr)\.?$/i, '').trim())
+    .filter(item => item && item.length >= 2 && /[\u4e00-\u9fff]/.test(item));
+}
+
+function scoreExample(item, tokens) {
+  const hay = `${item.translation || ''} ${item.sense || ''}`;
+  let score = 0;
+  tokens.forEach((token) => {
+    if (hay.includes(token)) score += token.length;
+  });
+  return score;
+}
+
+function pickExamples(examples, sense) {
+  const list = dedupeExamples(examples);
+  const tokens = senseTokens(sense);
+  if (!tokens.length) return list.slice(0, 3);
+  const ranked = [];
+  list.forEach((item) => {
+    const score = scoreExample(item, tokens);
+    if (score > 0) ranked.push({ item, score });
+  });
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked.slice(0, 3).map(row => row.item);
+}
+
 function extractExamples(data, dict) {
   const out = [];
   const pairs = (((data || {}).blng_sents_part) || {})['sentence-pair'] || [];
@@ -149,15 +215,8 @@ function extractExamples(data, dict) {
 }
 
 function pickExample(examples, sense) {
-  const list = examples || [];
-  if (!list.length) return null;
-  const hint = String(sense || '').replace(/[^\u4e00-\u9fffA-Za-z]/g, '');
-  if (hint) {
-    const matched = list.find(item => `${item.sentence} ${item.translation} ${item.sense || ''}`.includes(hint.slice(0, 4))
-      || (item.sense && sense && item.sense.toLowerCase().includes(String(sense).slice(0, 8).toLowerCase())));
-    if (matched) return matched;
-  }
-  return list.find(item => item.translation) || list[0];
+  const matches = pickExamples(examples, sense);
+  return matches[0] || null;
 }
 
 const lookupCache = new Map();
@@ -206,7 +265,9 @@ async function lookupWord(word) {
     } catch (_) { /* continue */ }
   }
 
-  result.examples = matchedYoudao ? extractExamples(youdao, null) : [];
+  result.examples = matchedYoudao
+    ? dedupeExamples(extractCollinsExamples(youdao).concat(extractExamples(youdao, null))).slice(0, 12)
+    : [];
 
   if (!result.ieltsMeaning) {
     try {
@@ -229,10 +290,11 @@ async function lookupWord(word) {
 
 async function lookupExamples(word, sense) {
   const data = await lookupWord(word);
-  const picked = pickExample(data.examples, sense);
+  const matches = pickExamples(data.examples, sense);
   return {
     examples: data.examples,
-    picked,
+    matches,
+    picked: matches[0] || null,
     senses: [data.ieltsMeaning].concat(String(data.otherMeanings || '').split(/\s*｜\s*/).filter(Boolean)).filter(Boolean),
   };
 }
@@ -245,6 +307,9 @@ module.exports = {
   fromYoudaoSuggest,
   fromYoudaoJsonapi,
   pickExample,
+  pickExamples,
+  extractCollinsExamples,
+  senseTokens,
   isMostlyEnglish,
   cleanSense,
 };
