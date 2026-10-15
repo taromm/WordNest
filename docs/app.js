@@ -817,6 +817,7 @@ function whenVoicesReady(callback) {
 }
 
 let dictAudio = null;
+let speakSerial = 0;
 
 function youdaoVoiceUrl(text, accent) {
   const type = accent === 'uk' ? 1 : 2;
@@ -824,13 +825,17 @@ function youdaoVoiceUrl(text, accent) {
 }
 
 function stopSpeak() {
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  speakSerial += 1;
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
   if (!dictAudio) return;
-  dictAudio.onended = null;
-  dictAudio.onerror = null;
-  dictAudio.pause();
-  dictAudio.removeAttribute('src');
-  try { dictAudio.load(); } catch (_) { /* ignore */ }
+  const audio = dictAudio;
+  dictAudio = null;
+  audio.onended = null;
+  audio.onerror = null;
+  try { audio.pause(); } catch (_) { /* ignore */ }
+  audio.removeAttribute('src');
 }
 
 function speakSystem(text, onend, voiceURI) {
@@ -838,7 +843,8 @@ function speakSystem(text, onend, voiceURI) {
     if (onend) onend();
     return;
   }
-  window.speechSynthesis.cancel();
+  const synth = window.speechSynthesis;
+  synth.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   const wanted = String(voiceURI || 'lang:en-US');
   if (wanted.indexOf('lang:') === 0) {
@@ -856,29 +862,59 @@ function speakSystem(text, onend, voiceURI) {
   }
   utter.rate = Number(((state.data && state.data.settings) || {}).ttsRate) || 0.92;
   if (onend) utter.onend = onend;
-  window.speechSynthesis.speak(utter);
+  try { if (synth.paused) synth.resume(); } catch (_) { /* ignore */ }
+  synth.speak(utter);
 }
 
-function speakYoudao(text, onend, accent) {
-  if (!dictAudio) {
-    dictAudio = new Audio();
-    dictAudio.preload = 'auto';
-    dictAudio.setAttribute('playsinline', 'true');
-  }
-  const fallback = accent === 'uk' ? 'lang:en-GB' : 'lang:en-US';
+function applyAudioRate(audio) {
   const rate = Number(((state.data && state.data.settings) || {}).ttsRate) || 0.92;
-  dictAudio.playbackRate = Math.min(1.2, Math.max(0.6, rate));
-  dictAudio.onended = () => { if (onend) onend(); };
-  dictAudio.onerror = () => speakSystem(text, onend, fallback);
-  dictAudio.src = youdaoVoiceUrl(text, accent);
-  const playing = dictAudio.play();
-  if (playing && playing.catch) {
-    playing.catch(() => speakSystem(text, onend, fallback));
-  }
+  try { audio.playbackRate = Math.min(1.2, Math.max(0.6, rate)); } catch (_) { /* ignore */ }
+}
+
+function speakYoudao(text, onend, accent, token) {
+  const urls = [
+    youdaoVoiceUrl(text, accent),
+    youdaoVoiceUrl(text, accent === 'uk' ? 'us' : 'uk'),
+  ];
+  const fallbackVoice = accent === 'uk' ? 'lang:en-GB' : 'lang:en-US';
+  const tryUrl = (index) => {
+    if (token !== speakSerial) return;
+    if (index >= urls.length) {
+      speakSystem(text, onend, fallbackVoice);
+      return;
+    }
+    const audio = new Audio();
+    dictAudio = audio;
+    audio.preload = 'auto';
+    audio.setAttribute('playsinline', 'true');
+    let settled = false;
+    const fail = () => {
+      if (settled || token !== speakSerial) return;
+      settled = true;
+      audio.onended = null;
+      audio.onerror = null;
+      tryUrl(index + 1);
+    };
+    audio.onerror = fail;
+    audio.onended = () => {
+      if (token === speakSerial && onend) onend();
+    };
+    audio.src = urls[index];
+    let playing;
+    try { playing = audio.play(); } catch (_) { fail(); return; }
+    if (playing && playing.then) {
+      playing.then(() => {
+        if (token !== speakSerial) return;
+        applyAudioRate(audio);
+      }).catch(() => fail());
+    }
+  };
+  tryUrl(0);
 }
 
 function speak(text, onend, voiceURI) {
   stopSpeak();
+  const token = speakSerial;
   const word = String(text || '').trim();
   if (!word) {
     if (onend) onend();
@@ -886,7 +922,7 @@ function speak(text, onend, voiceURI) {
   }
   const wanted = String(voiceURI != null ? voiceURI : (((state.data && state.data.settings) || {}).ttsVoiceURI || 'youdao:us'));
   if (wanted.indexOf('youdao:') === 0) {
-    speakYoudao(word, onend, wanted === 'youdao:uk' ? 'uk' : 'us');
+    speakYoudao(word, onend, wanted === 'youdao:uk' ? 'uk' : 'us', token);
     return;
   }
   speakSystem(word, onend, wanted);
@@ -2217,7 +2253,9 @@ function openWritingSpellReview(queue) {
       ui.overlay.querySelectorAll('.sense-pick').forEach((btn) => {
         btn.addEventListener('click', () => {
           ui.overlay.querySelectorAll('.sense-pick').forEach(el => el.classList.toggle('active', el === btn));
-          fillSpellExamples(item.word, btn.dataset.sense, token);
+          const next = loadToken + 1;
+          loadToken = next;
+          fillSpellExamples(item.word, btn.dataset.sense, next);
         });
       });
       fillSpellExamples(item.word, (senses[0] && senses[0].text) || '', token);
