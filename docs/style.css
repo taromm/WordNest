@@ -426,6 +426,9 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
 }
 .sense-pick:hover { background: #ffe9b8; }
 .sense-pick.active { background: #ffe9b8; border-color: rgba(196, 146, 64, .7); }
+.writing-spell .meaning.ielts { font-size: 28px; line-height: 1.5; margin-top: 16px; }
+.writing-spell .meaning.other { font-size: 22px; }
+.writing-spell .sense-pick { font-size: 20px; line-height: 1.5; padding: 12px 14px; }
 .example-out { margin-top: 10px; padding: 10px 12px; background: #fff; border-radius: 14px; border: 1px dashed var(--gold); }
 .ex-block + .ex-block { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .ex-en { margin: 0; font-family: var(--serif); font-size: 16px; }

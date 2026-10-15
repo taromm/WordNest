@@ -2293,7 +2293,7 @@ function openWritingSpellReview(queue) {
       const again = afterShow !== 'next';
       openOverlay(`
         <div class="modal">
-          <div class="review-card">
+          <div class="review-card writing-spell">
             <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
             <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : '先看这个词'}</p>
             ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
@@ -2314,9 +2314,8 @@ function openWritingSpellReview(queue) {
     loadToken = token;
     openOverlay(`
       <div class="modal">
-        <div class="review-card">
+        <div class="review-card writing-spell">
           <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
-          <p class="dictation-prompt">根据释义拼出英文。例句里的单词已遮住。</p>
           ${meaningHtml(item.word)}
           ${senses.length ? `<div class="sense-picks">${senses.map((sense, senseIndex) => `<button type="button" class="sense-pick${senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}">${escapeHtml(sense.label)}：${escapeHtml(sense.text)}</button>`).join('')}</div>` : ''}
           <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
