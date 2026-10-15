@@ -2316,8 +2316,7 @@ function openWritingSpellReview(queue) {
       <div class="modal">
         <div class="review-card writing-spell">
           <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
-          ${meaningHtml(item.word)}
-          ${senses.length ? `<div class="sense-picks">${senses.map((sense, senseIndex) => `<button type="button" class="sense-pick${senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}">${escapeHtml(sense.label)}：${escapeHtml(sense.text)}</button>`).join('')}</div>` : ''}
+          ${senses.length ? senses.map((sense, senseIndex) => `<p class="meaning ${sense.label === '雅思常考' ? 'ielts' : 'other'}${senses.length > 1 && senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}"><span class="sense-label">${escapeHtml(sense.label)}</span>${escapeHtml(sense.text)}</p>`).join('') : '<p class="meaning">还没有释义，复习时可以补上。</p>'}
           <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
           <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="拼写这个词">
           <div class="modal-actions" style="justify-content:center">
@@ -2357,12 +2356,14 @@ function openWritingSpellReview(queue) {
       event.stopPropagation();
       reveal(input.value, true);
     });
-    ui.overlay.querySelectorAll('.sense-pick').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        ui.overlay.querySelectorAll('.sense-pick').forEach(el => el.classList.toggle('active', el === btn));
+    ui.overlay.querySelectorAll('.meaning[data-sense]').forEach((line) => {
+      if (senses.length < 2) return;
+      line.classList.add('sense-line');
+      line.addEventListener('click', () => {
+        ui.overlay.querySelectorAll('.meaning[data-sense]').forEach(el => el.classList.toggle('active', el === line));
         const next = loadToken + 1;
         loadToken = next;
-        fillSpellExamples(item.word, btn.dataset.sense, next);
+        fillSpellExamples(item.word, line.dataset.sense, next);
       });
     });
     fillSpellExamples(item.word, (senses[0] && senses[0].text) || '', token);
