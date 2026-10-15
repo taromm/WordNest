@@ -2192,8 +2192,8 @@ function openWritingSpellReview(queue) {
   let phase = 'ask';
   let typed = '';
   let correct = false;
-  let afterShow = 'confirm';
-  let confirmMisses = 0;
+  let afterShow = 'retry';
+  let misses = 0;
   let loadToken = 0;
   const showSeconds = 5;
 
@@ -2215,7 +2215,7 @@ function openWritingSpellReview(queue) {
   function goNext() {
     const item = queue[index];
     const last = index >= queue.length - 1;
-    const rating = confirmMisses ? 'again' : 'good';
+    const rating = misses ? 'again' : 'good';
     api.reviewWord(item.bookId, item.word.id, rating).then(() => reload()).catch(() => {});
     if (last) {
       phase = 'done';
@@ -2226,7 +2226,7 @@ function openWritingSpellReview(queue) {
     phase = 'ask';
     typed = '';
     correct = false;
-    confirmMisses = 0;
+    misses = 0;
     paint();
   }
 
@@ -2243,13 +2243,13 @@ function openWritingSpellReview(queue) {
       if (count) count.textContent = String(Math.max(left, 0));
       if (left > 0) return;
       clearWritingShowTimer();
+      phase = 'ask';
+      typed = '';
+      correct = false;
       if (afterShow === 'next') {
         goNext();
         return;
       }
-      phase = 'confirm';
-      typed = '';
-      correct = false;
       paint();
     }, 1000);
   }
@@ -2268,7 +2268,7 @@ function openWritingSpellReview(queue) {
             <div class="review-word">${escapeHtml(item.word.text)}</div>
             <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
-            <p class="help"><b id="sp-count">${showSeconds}</b> 秒后${again ? '再次拼写' : '进入下一词'}</p>
+            <p class="help"><b id="sp-count">${showSeconds}</b> 秒后${again ? '继续拼这个词' : '进入下一词'}</p>
             <div class="modal-actions" style="justify-content:center">
               <button type="button" class="ghost" data-close>结束</button>
             </div>
@@ -2278,18 +2278,17 @@ function openWritingSpellReview(queue) {
       return;
     }
 
-    const retry = phase === 'confirm';
     const token = loadToken + 1;
     loadToken = token;
     openOverlay(`
       <div class="modal">
         <div class="review-card">
           <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
-          <p class="dictation-prompt">${retry ? '再拼一次。例句里的单词仍遮住。' : '根据释义拼出英文。例句里的单词已遮住。'}</p>
+          <p class="dictation-prompt">根据释义拼出英文。例句里的单词已遮住。</p>
           ${meaningHtml(item.word)}
           ${senses.length ? `<div class="sense-picks">${senses.map((sense, senseIndex) => `<button type="button" class="sense-pick${senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}">${escapeHtml(sense.label)}：${escapeHtml(sense.text)}</button>`).join('')}</div>` : ''}
           <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
-          <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${retry ? '再拼一次' : '拼写这个词'}">
+          <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="拼写这个词">
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
             <button type="button" class="ghost" data-close>结束</button>
@@ -2303,16 +2302,12 @@ function openWritingSpellReview(queue) {
     const reveal = (value) => {
       typed = String(value || '').trim();
       correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
-      if (!retry) {
-        beginShow('confirm');
-        return;
-      }
       if (correct) {
         beginShow('next');
         return;
       }
-      confirmMisses += 1;
-      beginShow('confirm');
+      misses += 1;
+      beginShow('retry');
     };
     ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
       if (index === 0) return;
@@ -2321,7 +2316,7 @@ function openWritingSpellReview(queue) {
       phase = 'ask';
       typed = '';
       correct = false;
-      confirmMisses = 0;
+      misses = 0;
       paint();
     });
     ui.overlay.querySelector('#sp-submit').addEventListener('click', () => reveal(input.value));
