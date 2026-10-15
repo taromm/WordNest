@@ -932,6 +932,7 @@ let scanPasteHandler = null;
 let notebookSaveTimer = null;
 let writingShowTimer = null;
 let writingShowKey = null;
+let writingShowKeyUp = null;
 let notebookSession = null;
 let notebookWriteChain = Promise.resolve();
 
@@ -1284,6 +1285,10 @@ function clearWritingShowTimer() {
   if (writingShowKey) {
     document.removeEventListener('keydown', writingShowKey);
     writingShowKey = null;
+  }
+  if (writingShowKeyUp) {
+    document.removeEventListener('keyup', writingShowKeyUp);
+    writingShowKeyUp = null;
   }
 }
 
@@ -2249,15 +2254,25 @@ function openWritingSpellReview(queue) {
     paint();
   }
 
-  function beginShow(nextAction) {
+  function beginShow(nextAction, fromEnter) {
     afterShow = nextAction;
     phase = 'show';
     let left = showSeconds;
+    let skipReady = !fromEnter;
     paint();
     speak(queue[index].word.text);
     clearWritingShowTimer();
+    if (fromEnter) {
+      writingShowKeyUp = (event) => {
+        if (event.key !== 'Enter') return;
+        skipReady = true;
+        document.removeEventListener('keyup', writingShowKeyUp);
+        writingShowKeyUp = null;
+      };
+      document.addEventListener('keyup', writingShowKeyUp);
+    }
     writingShowKey = (event) => {
-      if (event.key !== 'Enter') return;
+      if (event.key !== 'Enter' || event.repeat || !skipReady) return;
       event.preventDefault();
       finishShow();
     };
@@ -2316,15 +2331,15 @@ function openWritingSpellReview(queue) {
     `);
     const input = ui.overlay.querySelector('#sp-input');
     input.focus();
-    const reveal = (value) => {
+    const reveal = (value, fromEnter) => {
       typed = String(value || '').trim();
       correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
       if (correct) {
-        beginShow('next');
+        beginShow('next', fromEnter);
         return;
       }
       misses += 1;
-      beginShow('retry');
+      beginShow('retry', fromEnter);
     };
     ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
       if (index === 0) return;
@@ -2336,12 +2351,12 @@ function openWritingSpellReview(queue) {
       misses = 0;
       paint();
     });
-    ui.overlay.querySelector('#sp-submit').addEventListener('click', () => reveal(input.value));
+    ui.overlay.querySelector('#sp-submit').addEventListener('click', () => reveal(input.value, false));
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        reveal(input.value);
-      }
+      if (event.key !== 'Enter' || event.repeat) return;
+      event.preventDefault();
+      event.stopPropagation();
+      reveal(input.value, true);
     });
     ui.overlay.querySelectorAll('.sense-pick').forEach((btn) => {
       btn.addEventListener('click', () => {
