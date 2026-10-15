@@ -2445,6 +2445,7 @@ function openWritingSpellReview(queue, spellMode) {
       `);
       bindEnter(() => {
         if (phase !== 'recall') return;
+        enterArmsOnKeyup = true;
         phase = 'judge';
         paint();
       }, enterArmsOnKeyup);
@@ -2452,7 +2453,20 @@ function openWritingSpellReview(queue, spellMode) {
       return;
     }
     if (!spellMode && phase === 'judge') {
-      clearWritingShowTimer();
+      const fromEnter = enterArmsOnKeyup;
+      enterArmsOnKeyup = false;
+      const markKnown = (openedByEnter) => {
+        if (phase !== 'judge') return;
+        const before = spellProgressOf(item.word);
+        commit(item, 'hit');
+        enterArmsOnKeyup = Boolean(openedByEnter);
+        if (spellProgressOf(item.word) <= before) {
+          goNext();
+          return;
+        }
+        phase = 'gain';
+        paint();
+      };
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
@@ -2461,25 +2475,16 @@ function openWritingSpellReview(queue, spellMode) {
             <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
             <div class="modal-actions" style="justify-content:center">
+              <button type="button" class="ghost" data-close>结束</button>
               <button type="button" class="primary" id="sp-know">认识</button>
               <button type="button" class="secondary" id="sp-unsure">不熟</button>
-              <button type="button" class="ghost" data-close>结束</button>
             </div>
           </div>
         </div>
       `);
-      ui.overlay.querySelector('#sp-know').addEventListener('click', () => {
-        const before = spellProgressOf(item.word);
-        commit(item, 'hit');
-        if (spellProgressOf(item.word) <= before) {
-          enterArmsOnKeyup = false;
-          goNext();
-          return;
-        }
-        phase = 'gain';
-        paint();
-      });
+      ui.overlay.querySelector('#sp-know').addEventListener('click', () => markKnown(false));
       ui.overlay.querySelector('#sp-unsure').addEventListener('click', () => parkUnfamiliar(item));
+      bindEnter(() => markKnown(true), fromEnter);
       speak(item.word.text);
       return;
     }
@@ -2506,7 +2511,8 @@ function openWritingSpellReview(queue, spellMode) {
         goNext();
       };
       ui.overlay.querySelector('#sp-continue').addEventListener('click', () => leave(false));
-      bindEnter(() => leave(true), false);
+      bindEnter(() => leave(true), enterArmsOnKeyup);
+      enterArmsOnKeyup = false;
       return;
     }
     if (phase === 'show') {
