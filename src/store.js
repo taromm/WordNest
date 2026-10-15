@@ -87,6 +87,8 @@ function createWord(input) {
       reviewCount: 0,
       forgetCount: 0,
       mastered: false,
+      spellProgress: 0,
+      frontOn: '',
     }, input.review && typeof input.review === 'object' ? input.review : {}, {
       dueAt: (input.review && input.review.dueAt) || createdAt,
     }),
@@ -196,6 +198,81 @@ function compareReviewItems(a, b, now) {
   const db = Date.parse((wb.review || {}).dueAt) || 0;
   if (da !== db) return da - db;
   return String(wa.text || '').localeCompare(String(wb.text || ''));
+}
+
+function spellProgressOf(word) {
+  const n = Number(word && word.review && word.review.spellProgress);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(6, Math.floor(n));
+}
+
+function bumpSpellProgress(progress) {
+  const n = Math.max(0, Math.min(6, Math.floor(Number(progress) || 0)));
+  if (n >= 6) return 6;
+  if (n === 0) return 2;
+  return n + 1;
+}
+
+function localDay(ts) {
+  const d = new Date(ts || Date.now());
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+function nextLocalDayStart(ts) {
+  const d = new Date(ts || Date.now());
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function writingReviewRank(word, now) {
+  const today = localDay(now);
+  const frontOn = String((word && word.review && word.review.frontOn) || '');
+  if (frontOn && frontOn === today) return 0;
+  if (frontOn && frontOn > today) return 2;
+  return 1;
+}
+
+function applySpellOutcome(word, outcome, now) {
+  const ts = now || Date.now();
+  const review = Object.assign({}, word.review);
+  if (outcome === 'miss') {
+    review.spellProgress = 0;
+    return Object.assign({}, word, { review, updatedAt: new Date(ts).toISOString() });
+  }
+  if (outcome === 'unfamiliar') {
+    const due = nextLocalDayStart(ts);
+    review.spellProgress = 0;
+    review.frontOn = localDay(due.getTime());
+    review.mastered = false;
+    review.forgetCount = (Number(review.forgetCount) || 0) + 1;
+    review.lastReviewedAt = new Date(ts).toISOString();
+    review.reviewCount = (Number(review.reviewCount) || 0) + 1;
+    review.repetitions = 0;
+    review.dueAt = due.toISOString();
+    review.intervalMinutes = Math.max(1, Math.round((due.getTime() - ts) / 60000));
+    return Object.assign({}, word, { review, updatedAt: new Date(ts).toISOString() });
+  }
+  if (outcome === 'fail') {
+    const cleared = Object.assign({}, word, {
+      review: Object.assign({}, review, { spellProgress: 0 }),
+    });
+    const next = applyReview(cleared, 'again', ts);
+    next.review.spellProgress = 0;
+    next.review.mastered = false;
+    return next;
+  }
+  const progress = bumpSpellProgress(spellProgressOf(word));
+  const base = Object.assign({}, word, {
+    review: Object.assign({}, review, { spellProgress: progress, frontOn: '' }),
+  });
+  const next = applyReview(base, 'good', ts);
+  next.review.spellProgress = progress;
+  next.review.frontOn = '';
+  next.review.mastered = progress >= 6;
+  return next;
 }
 
 function dueWords(state, bookId, now) {
@@ -455,6 +532,11 @@ module.exports = {
   emptyState,
   migrate,
   applyReview,
+  applySpellOutcome,
+  spellProgressOf,
+  bumpSpellProgress,
+  localDay,
+  writingReviewRank,
   createWord,
   dueWords,
   dueCount,

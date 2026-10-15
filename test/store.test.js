@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { Store, migrate, dueCount, dueWords, applyReview, createWord, emptyState } = require('../src/store');
+const { Store, migrate, dueCount, dueWords, applyReview, applySpellOutcome, spellProgressOf, createWord, emptyState, writingReviewRank, localDay } = require('../src/store');
 
 test('migrate never drops words from older files', () => {
   const migrated = migrate({
@@ -185,4 +185,39 @@ test('overwrite download does not wipe a local notebook with empty cloud notes',
   });
   assert.equal(store.getState().books.listening.notebook, '听力结构');
   assert.equal(store.getState().books.listening.words[0].text, 'keep');
+});
+
+test('spell progress starts at zero, jumps a third, then a sixth, and resets', () => {
+  const now = Date.parse('2026-10-16T01:00:00.000Z');
+  let word = createWord({ text: 'ring', createdAt: new Date(now).toISOString() });
+  assert.equal(spellProgressOf(word), 0);
+  word = applySpellOutcome(word, 'hit', now);
+  assert.equal(word.review.spellProgress, 2);
+  word = applySpellOutcome(word, 'hit', now + 1000);
+  assert.equal(word.review.spellProgress, 3);
+  word = applySpellOutcome(word, 'miss', now + 2000);
+  assert.equal(word.review.spellProgress, 0);
+  word = applySpellOutcome(word, 'unfamiliar', now + 3000);
+  assert.equal(word.review.spellProgress, 0);
+  assert.equal(word.review.frontOn, localDay(Date.parse(word.review.dueAt)));
+  assert.equal(writingReviewRank(word, Date.parse(word.review.dueAt)), 0);
+  assert.equal(writingReviewRank(word, now + 3000), 2);
+  word = applySpellOutcome(word, 'hit', now + 4000);
+  assert.equal(word.review.spellProgress, 2);
+  assert.equal(word.review.frontOn, '');
+});
+
+test('five clean recalls fill the ring and leave review', () => {
+  const now = Date.parse('2026-10-16T01:00:00.000Z');
+  let word = createWord({ text: 'done', createdAt: new Date(now).toISOString() });
+  for (let i = 0; i < 4; i += 1) {
+    word = applySpellOutcome(word, 'hit', now + i * 1000);
+    assert.equal(word.review.mastered, false);
+  }
+  word = applySpellOutcome(word, 'hit', now + 5000);
+  assert.equal(word.review.spellProgress, 6);
+  assert.equal(word.review.mastered, true);
+  word = applySpellOutcome(word, 'fail', now + 6000);
+  assert.equal(word.review.spellProgress, 0);
+  assert.equal(word.review.mastered, false);
 });

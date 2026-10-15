@@ -158,7 +158,92 @@ function compareReviewItems(a, b, now) {
   return String(wa.text || '').localeCompare(String(wb.text || ''));
 }
 
+function spellProgressOf(word) {
+  const n = Number(word && word.review && word.review.spellProgress);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(6, Math.floor(n));
+}
+
+function bumpSpellProgress(progress) {
+  const n = Math.max(0, Math.min(6, Math.floor(Number(progress) || 0)));
+  if (n >= 6) return 6;
+  if (n === 0) return 2;
+  return n + 1;
+}
+
+function localDay(ts) {
+  const d = new Date(ts || Date.now());
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+function nextLocalDayStart(ts) {
+  const d = new Date(ts || Date.now());
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function writingReviewRank(word, now) {
+  const today = localDay(now);
+  const frontOn = String((word && word.review && word.review.frontOn) || '');
+  if (frontOn && frontOn === today) return 0;
+  if (frontOn && frontOn > today) return 2;
+  return 1;
+}
+
+function applySpellOutcome(word, outcome, now) {
+  const ts = now || Date.now();
+  const review = Object.assign({}, word.review);
+  if (outcome === 'miss') {
+    review.spellProgress = 0;
+    return Object.assign({}, word, { review, updatedAt: new Date(ts).toISOString() });
+  }
+  if (outcome === 'unfamiliar') {
+    const due = nextLocalDayStart(ts);
+    review.spellProgress = 0;
+    review.frontOn = localDay(due.getTime());
+    review.mastered = false;
+    review.forgetCount = (Number(review.forgetCount) || 0) + 1;
+    review.lastReviewedAt = new Date(ts).toISOString();
+    review.reviewCount = (Number(review.reviewCount) || 0) + 1;
+    review.repetitions = 0;
+    review.dueAt = due.toISOString();
+    review.intervalMinutes = Math.max(1, Math.round((due.getTime() - ts) / 60000));
+    return Object.assign({}, word, { review, updatedAt: new Date(ts).toISOString() });
+  }
+  if (outcome === 'fail') {
+    const cleared = Object.assign({}, word, {
+      review: Object.assign({}, review, { spellProgress: 0 }),
+    });
+    const next = applyReview(cleared, 'again', ts);
+    next.review.spellProgress = 0;
+    next.review.mastered = false;
+    return next;
+  }
+  const progress = bumpSpellProgress(spellProgressOf(word));
+  const base = Object.assign({}, word, {
+    review: Object.assign({}, review, { spellProgress: progress, frontOn: '' }),
+  });
+  const next = applyReview(base, 'good', ts);
+  next.review.spellProgress = progress;
+  next.review.frontOn = '';
+  next.review.mastered = progress >= 6;
+  return next;
+}
+
+function spellRingHtml(word) {
+  const sixths = spellProgressOf(word);
+  const circ = 2 * Math.PI * 15.5;
+  const arc = sixths > 0
+    ? `<circle class="spell-ring-value" cx="18" cy="18" r="15.5" stroke-dasharray="${circ.toFixed(2)}" stroke-dashoffset="${(circ * (1 - sixths / 6)).toFixed(2)}"></circle>`
+    : '';
+  return `<div class="spell-ring" aria-label="进度 ${sixths}/6"><svg viewBox="0 0 36 36" aria-hidden="true"><circle class="spell-ring-track" cx="18" cy="18" r="15.5"></circle>${arc}</svg></div>`;
+}
+
 function dueInBook(bookId) {
+  if (bookId === 'writing') return collectWritingQueue().length;
   const words = (((state.data || {}).books || {})[bookId] || {}).words || [];
   return words.filter(word => isDue(word)).length;
 }
@@ -235,7 +320,7 @@ function createLocalApi() {
       source: item.source || 'manual',
       createdAt: now,
       updatedAt: now,
-      review: { ease: 2.5, intervalMinutes: 90, repetitions: 0, dueAt: now, lastReviewedAt: null, reviewCount: 0, forgetCount: 0, mastered: false },
+      review: { ease: 2.5, intervalMinutes: 90, repetitions: 0, dueAt: now, lastReviewedAt: null, reviewCount: 0, forgetCount: 0, mastered: false, spellProgress: 0, frontOn: '' },
     };
   }
 
@@ -2198,15 +2283,28 @@ function collectReviewQueue(oneBook) {
   return queue;
 }
 
-function openWritingSpellReview(queue) {
+function openWritingSpellReview(queue, spellMode) {
   let index = 0;
-  let phase = 'ask';
+  let phase = spellMode ? 'ask' : 'read';
   let typed = '';
   let correct = false;
   let afterShow = 'retry';
   let misses = 0;
   let loadToken = 0;
+  let spellSave = Promise.resolve();
   const showSeconds = 5;
+
+  function commit(item, outcome) {
+    const next = applySpellOutcome(item.word, outcome);
+    item.word.review = next.review;
+    item.word.updatedAt = next.updatedAt;
+    const review = Object.assign({}, next.review);
+    spellSave = spellSave
+      .catch(() => {})
+      .then(() => api.updateWord(item.bookId, item.word.id, { review }))
+      .then(() => reload())
+      .catch(() => {});
+  }
 
   async function fillSpellExamples(word, sense, token) {
     const box = ui.overlay.querySelector('#spell-examples');
@@ -2224,17 +2322,29 @@ function openWritingSpellReview(queue) {
   }
 
   function goNext() {
-    const item = queue[index];
-    const last = index >= queue.length - 1;
-    const rating = misses ? 'again' : 'good';
-    api.reviewWord(item.bookId, item.word.id, rating).then(() => reload()).catch(() => {});
-    if (last) {
+    if (index >= queue.length - 1) {
       phase = 'done';
-      openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">拼对的词已记下。可以随时再打开写作册继续。</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
+      openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">进度环满的词之后不会再出现。不熟的词会排在明天复习的最前面。</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
       return;
     }
     index += 1;
-    phase = 'ask';
+    phase = spellMode ? 'ask' : 'read';
+    typed = '';
+    correct = false;
+    misses = 0;
+    paint();
+  }
+
+  function parkUnfamiliar(item) {
+    commit(item, 'unfamiliar');
+    queue.splice(index, 1);
+    queue.push(item);
+    if (!queue.length) {
+      goNext();
+      return;
+    }
+    if (index >= queue.length) index = 0;
+    phase = spellMode ? 'ask' : 'read';
     typed = '';
     correct = false;
     misses = 0;
@@ -2288,19 +2398,51 @@ function openWritingSpellReview(queue) {
 
   function paint() {
     const item = queue[index];
+    if (!item) {
+      phase = 'done';
+      openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">进度环满的词之后不会再出现。不熟的词会排在明天复习的最前面。</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
+      return;
+    }
     const senses = senseList(item.word);
+    if (!spellMode) {
+      openOverlay(`
+        <div class="modal">
+          <div class="review-card writing-spell">
+            <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
+            ${spellRingHtml(item.word)}
+            <div class="review-word">${escapeHtml(item.word.text)}</div>
+            <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+            ${meaningHtml(item.word)}
+            <div class="modal-actions" style="justify-content:center">
+              <button type="button" class="primary" id="sp-know">认识</button>
+              <button type="button" class="secondary" id="sp-unsure">不熟</button>
+              <button type="button" class="ghost" data-close>结束</button>
+            </div>
+          </div>
+        </div>
+      `);
+      ui.overlay.querySelector('#sp-know').addEventListener('click', () => {
+        commit(item, 'hit');
+        goNext();
+      });
+      ui.overlay.querySelector('#sp-unsure').addEventListener('click', () => parkUnfamiliar(item));
+      speak(item.word.text);
+      return;
+    }
     if (phase === 'show') {
       const again = afterShow !== 'next';
+      const full = spellProgressOf(item.word) >= 6;
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
             <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
+            ${spellRingHtml(item.word)}
             <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : '先看这个词'}</p>
             ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
             <div class="review-word">${escapeHtml(item.word.text)}</div>
             <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
-            <p class="help"><b id="sp-count">${showSeconds}</b> 秒后${again ? '继续拼这个词' : '进入下一词'}，按回车可跳过</p>
+            <p class="help">${full ? '进度已满，之后不再复习。' : ''}<b id="sp-count">${showSeconds}</b> 秒后${again ? '继续拼这个词' : '进入下一词'}，按回车可跳过</p>
             <div class="modal-actions" style="justify-content:center">
               <button type="button" class="ghost" data-close>结束</button>
             </div>
@@ -2333,10 +2475,12 @@ function openWritingSpellReview(queue) {
       typed = String(value || '').trim();
       correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
       if (correct) {
+        commit(item, misses ? 'fail' : 'hit');
         beginShow('next', fromEnter);
         return;
       }
       misses += 1;
+      commit(item, 'miss');
       beginShow('retry', fromEnter);
     };
     ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
@@ -2371,14 +2515,50 @@ function openWritingSpellReview(queue) {
   paint();
 }
 
-function openReview(oneBook) {
-  const queue = collectReviewQueue(oneBook);
+function collectWritingQueue() {
+  const ts = Date.now();
+  const today = localDay(ts);
+  const words = ((((state.data || {}).books || {}).writing || {}).words) || [];
+  const queue = [];
+  words.forEach((word) => {
+    if (spellProgressOf(word) >= 6) return;
+    const frontOn = String((word.review || {}).frontOn || '');
+    const dueAt = Date.parse((word.review || {}).dueAt);
+    const due = !Number.isFinite(dueAt) || dueAt <= ts;
+    if (frontOn === today || due) queue.push({ bookId: 'writing', word });
+  });
+  queue.sort((a, b) => {
+    const rank = writingReviewRank(a.word, ts) - writingReviewRank(b.word, ts);
+    if (rank) return rank;
+    return compareReviewItems(a, b, ts);
+  });
+  return queue;
+}
+
+function openWritingReview() {
+  const words = ((((state.data || {}).books || {}).writing || {}).words) || [];
+  const queue = collectWritingQueue();
   if (!queue.length) {
+    if (words.length && words.every(word => spellProgressOf(word) >= 6)) {
+      openOverlay(`<div class="modal"><h2>这册不用再复习</h2><p class="help">写作词的进度环都满了，之后不会再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+      return;
+    }
     openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
+  openOverlay(`<div class="modal"><h2>开始写作复习</h2><p class="help">拼写：看释义把单词拼出来。不拼写：看单词后选认识或不熟。不熟会排到这次最后，明天排在最前。进度环满了就不再复习。</p><div class="modal-actions"><button type="button" class="primary" id="mode-spell">拼写</button><button type="button" class="secondary" id="mode-read">不拼写</button><button type="button" class="ghost" data-close>取消</button></div></div>`);
+  ui.overlay.querySelector('#mode-spell').addEventListener('click', () => openWritingSpellReview(queue, true));
+  ui.overlay.querySelector('#mode-read').addEventListener('click', () => openWritingSpellReview(queue, false));
+}
+
+function openReview(oneBook) {
   if (oneBook && state.bookId === 'writing') {
-    openWritingSpellReview(queue);
+    openWritingReview();
+    return;
+  }
+  const queue = collectReviewQueue(oneBook);
+  if (!queue.length) {
+    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
   let index = 0;
