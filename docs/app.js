@@ -930,6 +930,7 @@ function speak(text, onend, voiceURI) {
 
 let scanPasteHandler = null;
 let notebookSaveTimer = null;
+let writingShowTimer = null;
 let notebookSession = null;
 let notebookWriteChain = Promise.resolve();
 
@@ -1274,6 +1275,12 @@ function openNotebook() {
   box.focus();
 }
 
+function clearWritingShowTimer() {
+  if (!writingShowTimer) return;
+  clearInterval(writingShowTimer);
+  writingShowTimer = null;
+}
+
 function closeOverlay() {
   const pending = flushOpenNotebook();
   if (notebookSaveTimer) {
@@ -1281,6 +1288,7 @@ function closeOverlay() {
     notebookSaveTimer = null;
   }
   notebookSession = null;
+  clearWritingShowTimer();
   state.speaking = false;
   scanPasteHandler = null;
   stopSpeak();
@@ -2184,7 +2192,10 @@ function openWritingSpellReview(queue) {
   let phase = 'ask';
   let typed = '';
   let correct = false;
+  let afterShow = 'confirm';
+  let confirmMisses = 0;
   let loadToken = 0;
+  const showSeconds = 5;
 
   async function fillSpellExamples(word, sense, token) {
     const box = ui.overlay.querySelector('#spell-examples');
@@ -2201,114 +2212,134 @@ function openWritingSpellReview(queue) {
     current.innerHTML = exampleBlocksHtml(matches, word.text);
   }
 
-  function paint() {
+  function goNext() {
     const item = queue[index];
     const last = index >= queue.length - 1;
+    const rating = confirmMisses ? 'again' : 'good';
+    api.reviewWord(item.bookId, item.word.id, rating).then(() => reload()).catch(() => {});
+    if (last) {
+      phase = 'done';
+      openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">拼对的词已记下。可以随时再打开写作册继续。</p><div class="modal-actions"><button type="button" class="primary" data-close>好</button></div></div>`);
+      return;
+    }
+    index += 1;
+    phase = 'ask';
+    typed = '';
+    correct = false;
+    confirmMisses = 0;
+    paint();
+  }
+
+  function beginShow(nextAction) {
+    afterShow = nextAction;
+    phase = 'show';
+    let left = showSeconds;
+    paint();
+    speak(queue[index].word.text);
+    clearWritingShowTimer();
+    writingShowTimer = setInterval(() => {
+      left -= 1;
+      const count = ui.overlay.querySelector('#sp-count');
+      if (count) count.textContent = String(Math.max(left, 0));
+      if (left > 0) return;
+      clearWritingShowTimer();
+      if (afterShow === 'next') {
+        goNext();
+        return;
+      }
+      phase = 'confirm';
+      typed = '';
+      correct = false;
+      paint();
+    }, 1000);
+  }
+
+  function paint() {
+    const item = queue[index];
     const senses = senseList(item.word);
-    if (phase === 'ask') {
-      const token = loadToken + 1;
-      loadToken = token;
+    if (phase === 'show') {
+      const again = afterShow !== 'next';
       openOverlay(`
         <div class="modal">
           <div class="review-card">
             <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
-            <p class="dictation-prompt">根据释义拼出英文。例句里的单词已遮住，可以换一条释义看不同例句。</p>
+            <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '先看这个词' : '先看这个词')}</p>
+            ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
+            <div class="review-word">${escapeHtml(item.word.text)}</div>
+            <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
-            ${senses.length ? `<div class="sense-picks">${senses.map((sense, senseIndex) => `<button type="button" class="sense-pick${senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}">${escapeHtml(sense.label)}：${escapeHtml(sense.text)}</button>`).join('')}</div>` : ''}
-            <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
-            <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="拼写这个词">
+            <p class="help"><b id="sp-count">${showSeconds}</b> 秒后${again ? '再次拼写' : '进入下一词'}</p>
             <div class="modal-actions" style="justify-content:center">
-              <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
               <button type="button" class="ghost" data-close>结束</button>
-              <button type="button" class="ghost" id="sp-skip">不会</button>
-              <button type="button" class="primary" id="sp-submit">提交</button>
             </div>
           </div>
         </div>
       `);
-      const input = ui.overlay.querySelector('#sp-input');
-      input.focus();
-      const reveal = (value) => {
-        typed = String(value || '').trim();
-        correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
-        phase = 'show';
-        paint();
-      };
-      ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
-        if (index === 0) return;
-        index -= 1;
-        phase = 'ask';
-        typed = '';
-        correct = false;
-        paint();
-      });
-      ui.overlay.querySelector('#sp-submit').addEventListener('click', () => reveal(input.value));
-      ui.overlay.querySelector('#sp-skip').addEventListener('click', () => reveal(''));
-      input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          reveal(input.value);
-        }
-      });
-      ui.overlay.querySelectorAll('.sense-pick').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          ui.overlay.querySelectorAll('.sense-pick').forEach(el => el.classList.toggle('active', el === btn));
-          const next = loadToken + 1;
-          loadToken = next;
-          fillSpellExamples(item.word, btn.dataset.sense, next);
-        });
-      });
-      fillSpellExamples(item.word, (senses[0] && senses[0].text) || '', token);
       return;
     }
 
+    const retry = phase === 'confirm';
+    const token = loadToken + 1;
+    loadToken = token;
     openOverlay(`
       <div class="modal">
         <div class="review-card">
           <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
-          <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看答案，再判断')}</p>
-          ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
-          <div class="review-word">${escapeHtml(item.word.text)}</div>
-          <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+          <p class="dictation-prompt">${retry ? '再拼一次。例句里的单词仍遮住。' : '根据释义拼出英文。例句里的单词已遮住。'}</p>
           ${meaningHtml(item.word)}
-          ${examplePickerHtml(item.word)}
+          ${senses.length ? `<div class="sense-picks">${senses.map((sense, senseIndex) => `<button type="button" class="sense-pick${senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}">${escapeHtml(sense.label)}：${escapeHtml(sense.text)}</button>`).join('')}</div>` : ''}
+          <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
+          <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${retry ? '再拼一次' : '拼写这个词'}">
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
             <button type="button" class="ghost" data-close>结束</button>
-            <button type="button" class="secondary" id="sp-speak">发音</button>
-            <button type="button" class="danger" id="rv-again">不认识</button>
-            <button type="button" class="secondary" id="rv-hard">模糊</button>
-            <button type="button" class="primary" id="rv-good">认识</button>
+            <button type="button" class="primary" id="sp-submit">提交</button>
           </div>
         </div>
       </div>
     `);
-    bindExamplePanel(ui.overlay, item.word);
-    ui.overlay.querySelector('#sp-speak').addEventListener('click', () => speak(item.word.text));
+    const input = ui.overlay.querySelector('#sp-input');
+    input.focus();
+    const reveal = (value) => {
+      typed = String(value || '').trim();
+      correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
+      if (!retry) {
+        beginShow('confirm');
+        return;
+      }
+      if (correct) {
+        beginShow('next');
+        return;
+      }
+      confirmMisses += 1;
+      beginShow('confirm');
+    };
     ui.overlay.querySelector('#sp-prev').addEventListener('click', () => {
       if (index === 0) return;
+      clearWritingShowTimer();
       index -= 1;
       phase = 'ask';
       typed = '';
       correct = false;
+      confirmMisses = 0;
       paint();
     });
-    const rate = async (rating) => {
-      await api.reviewWord(item.bookId, item.word.id, rating);
-      await reload();
-      if (last) {
-        openOverlay(`<div class="modal"><h2>写作复习完成</h2><p class="help">已按遗忘曲线记下下次时间。可以随时再打开写作册继续拼写。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
-        return;
+    ui.overlay.querySelector('#sp-submit').addEventListener('click', () => reveal(input.value));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        reveal(input.value);
       }
-      index += 1;
-      phase = 'ask';
-      typed = '';
-      correct = false;
-      paint();
-    };
-    ui.overlay.querySelector('#rv-again').addEventListener('click', () => rate('again'));
-    ui.overlay.querySelector('#rv-hard').addEventListener('click', () => rate('hard'));
-    ui.overlay.querySelector('#rv-good').addEventListener('click', () => rate('good'));
+    });
+    ui.overlay.querySelectorAll('.sense-pick').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        ui.overlay.querySelectorAll('.sense-pick').forEach(el => el.classList.toggle('active', el === btn));
+        const next = loadToken + 1;
+        loadToken = next;
+        fillSpellExamples(item.word, btn.dataset.sense, next);
+      });
+    });
+    fillSpellExamples(item.word, (senses[0] && senses[0].text) || '', token);
   }
   paint();
 }
