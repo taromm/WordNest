@@ -931,6 +931,7 @@ function speak(text, onend, voiceURI) {
 let scanPasteHandler = null;
 let notebookSaveTimer = null;
 let writingShowTimer = null;
+let writingShowKey = null;
 let notebookSession = null;
 let notebookWriteChain = Promise.resolve();
 
@@ -1276,9 +1277,14 @@ function openNotebook() {
 }
 
 function clearWritingShowTimer() {
-  if (!writingShowTimer) return;
-  clearInterval(writingShowTimer);
-  writingShowTimer = null;
+  if (writingShowTimer) {
+    clearInterval(writingShowTimer);
+    writingShowTimer = null;
+  }
+  if (writingShowKey) {
+    document.removeEventListener('keydown', writingShowKey);
+    writingShowKey = null;
+  }
 }
 
 function closeOverlay() {
@@ -2230,6 +2236,19 @@ function openWritingSpellReview(queue) {
     paint();
   }
 
+  function finishShow() {
+    if (phase !== 'show') return;
+    clearWritingShowTimer();
+    phase = 'ask';
+    typed = '';
+    correct = false;
+    if (afterShow === 'next') {
+      goNext();
+      return;
+    }
+    paint();
+  }
+
   function beginShow(nextAction) {
     afterShow = nextAction;
     phase = 'show';
@@ -2237,20 +2256,18 @@ function openWritingSpellReview(queue) {
     paint();
     speak(queue[index].word.text);
     clearWritingShowTimer();
+    writingShowKey = (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      finishShow();
+    };
+    document.addEventListener('keydown', writingShowKey);
     writingShowTimer = setInterval(() => {
       left -= 1;
       const count = ui.overlay.querySelector('#sp-count');
       if (count) count.textContent = String(Math.max(left, 0));
       if (left > 0) return;
-      clearWritingShowTimer();
-      phase = 'ask';
-      typed = '';
-      correct = false;
-      if (afterShow === 'next') {
-        goNext();
-        return;
-      }
-      paint();
+      finishShow();
     }, 1000);
   }
 
@@ -2268,7 +2285,7 @@ function openWritingSpellReview(queue) {
             <div class="review-word">${escapeHtml(item.word.text)}</div>
             <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
-            <p class="help"><b id="sp-count">${showSeconds}</b> 秒后${again ? '继续拼这个词' : '进入下一词'}</p>
+            <p class="help"><b id="sp-count">${showSeconds}</b> 秒后${again ? '继续拼这个词' : '进入下一词'}，按回车可跳过</p>
             <div class="modal-actions" style="justify-content:center">
               <button type="button" class="ghost" data-close>结束</button>
             </div>
