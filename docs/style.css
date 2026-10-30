@@ -711,6 +711,19 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   padding: 14px 8px;
   font-size: 17px;
 }
+.word-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: min(640px, 100%);
+  margin: 14px auto 0;
+}
+.word-nav button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 14px 8px;
+  font-size: 17px;
+}
 body:has(.overlay.open .review-card) .menu-btn,
 body:has(.overlay.open .player-card) .menu-btn {
   display: none !important;

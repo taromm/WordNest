@@ -2702,12 +2702,11 @@ function openReview(oneBook) {
           ${phase === 'show' ? tagHtml(item.word) : ''}
           ${phase === 'show' ? examplePickerHtml(item.word) : ''}
           <div class="modal-actions" style="justify-content:center">
-            <button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+            ${phase === 'ask' ? `<button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>` : ''}
             <button type="button" class="ghost" data-close>结束</button>
             <button type="button" class="secondary" id="rv-speak">发音</button>
-            ${phase === 'ask' ? '' : `<button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button>`}
           </div>
-          ${phase === 'ask' ? `<div class="review-rates"><button type="button" class="danger" id="rv-again">不认识</button><button type="button" class="secondary" id="rv-hard">模糊</button><button type="button" class="primary" id="rv-good">认识</button></div>` : ''}
+          ${phase === 'ask' ? `<div class="review-rates"><button type="button" class="danger" id="rv-again">不认识</button><button type="button" class="secondary" id="rv-hard">模糊</button><button type="button" class="primary" id="rv-good">认识</button></div>` : `<div class="word-nav"><button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button><button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button></div>`}
         </div>
       </div>
     `);
@@ -2928,9 +2927,11 @@ function openPlayer() {
           </label>
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="ghost" data-close>停止</button>
-            <button type="button" class="secondary" id="pl-prev">上一词</button>
             <button type="button" class="secondary" id="pl-pause">${paused ? '继续' : '暂停'}</button>
-            <button type="button" class="primary" id="pl-next">下一词</button>
+          </div>
+          <div class="word-nav">
+            <button type="button" class="secondary" id="pl-prev">＜ 上一词</button>
+            <button type="button" class="primary" id="pl-next">下一词 ＞</button>
           </div>
         </div>
       </div>
