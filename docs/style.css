@@ -980,7 +980,11 @@ body:has(.overlay.open .player-card) .menu-btn {
     display: grid;
     width: 100%;
   }
-  .toolbar-filters { grid-template-columns: 1fr; gap: 10px; }
+  .toolbar-filters {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: end;
+  }
   .search input,
   .search select {
     width: 100%;
@@ -1017,9 +1021,11 @@ body:has(.overlay.open .player-card) .menu-btn {
   }
   .scan-mode { grid-template-columns: 1fr; }
   .grid-2,
-  .manage-toolbar,
   .manage-tagbar {
     grid-template-columns: 1fr;
+  }
+  .manage-toolbar {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
   }
   .modal {
     width: 100%;
