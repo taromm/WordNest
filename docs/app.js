@@ -809,14 +809,16 @@ function sourceLabel() {
   return state.tagFilter;
 }
 
-function sourceWords() {
+function matchesSourceFilter(word) {
   const tag = state.tagFilter;
-  return currentWords().filter((word) => {
-    const tags = wordTags(word);
-    if (tag === UNTAGGED_FILTER) return !tags.length;
-    if (tag) return tags.includes(tag);
-    return true;
-  });
+  if (!tag) return true;
+  const tags = wordTags(word);
+  if (tag === UNTAGGED_FILTER) return !tags.length;
+  return tags.includes(tag);
+}
+
+function sourceWords() {
+  return currentWords().filter(matchesSourceFilter);
 }
 
 const TTS_ACCENTS = [
@@ -2276,6 +2278,7 @@ function collectReviewQueue(oneBook) {
   const queue = [];
   ids.forEach((bookId) => {
     ((((state.data.books || {})[bookId] || {}).words) || []).forEach((word) => {
+      if (oneBook && !matchesSourceFilter(word)) return;
       if (isDue(word)) queue.push({ bookId, word });
     });
   });
@@ -2284,6 +2287,7 @@ function collectReviewQueue(oneBook) {
 }
 
 function openWritingSpellReview(queue, spellMode) {
+  const scopeNote = state.tagFilter ? ` · ${escapeHtml(sourceLabel())}` : '';
   let index = 0;
   let phase = spellMode ? 'ask' : 'recall';
   let typed = '';
@@ -2460,7 +2464,7 @@ function openWritingSpellReview(queue, spellMode) {
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
-            <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
+            <p class="progress">写作${scopeNote} · 看词判断 · ${index + 1} / ${queue.length}</p>
             ${recallMeanings}
             <p class="help">按回车看单词</p>
             <div class="modal-actions" style="justify-content:center">
@@ -2496,7 +2500,7 @@ function openWritingSpellReview(queue, spellMode) {
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
-            <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
+            <p class="progress">写作${scopeNote} · 看词判断 · ${index + 1} / ${queue.length}</p>
             <div class="review-word">${escapeHtml(item.word.text)}</div>
             <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
             ${meaningHtml(item.word)}
@@ -2522,7 +2526,7 @@ function openWritingSpellReview(queue, spellMode) {
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
-            <p class="progress">写作 · 看词判断 · ${index + 1} / ${queue.length}</p>
+            <p class="progress">写作${scopeNote} · 看词判断 · ${index + 1} / ${queue.length}</p>
             ${spellRingHtml(item.word)}
             <p class="dictation-result ok">${full ? '进度已满，之后不再复习' : '进度增加了'}</p>
             <div class="review-word">${escapeHtml(item.word.text)}</div>
@@ -2550,7 +2554,7 @@ function openWritingSpellReview(queue, spellMode) {
       openOverlay(`
         <div class="modal">
           <div class="review-card writing-spell">
-            <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
+            <p class="progress">写作${scopeNote} · 看释义拼写 · ${index + 1} / ${queue.length}</p>
             ${spellRingHtml(item.word)}
             <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : '先看这个词'}</p>
             ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
@@ -2572,7 +2576,7 @@ function openWritingSpellReview(queue, spellMode) {
     openOverlay(`
       <div class="modal">
         <div class="review-card writing-spell">
-          <p class="progress">写作 · 看释义拼写 · ${index + 1} / ${queue.length}</p>
+          <p class="progress">写作${scopeNote} · 看释义拼写 · ${index + 1} / ${queue.length}</p>
           ${senses.length ? senses.map((sense, senseIndex) => `<p class="meaning ${sense.label === '雅思常考' ? 'ielts' : 'other'}${senses.length > 1 && senseIndex === 0 ? ' active' : ''}" data-sense="${escapeHtml(sense.text)}"><span class="sense-label">${escapeHtml(sense.label)}</span>${escapeHtml(sense.text)}</p>`).join('') : '<p class="meaning">还没有释义，复习时可以补上。</p>'}
           <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
           <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="拼写这个词">
@@ -2636,6 +2640,7 @@ function collectWritingQueue() {
   const words = ((((state.data || {}).books || {}).writing || {}).words) || [];
   const queue = [];
   words.forEach((word) => {
+    if (!matchesSourceFilter(word)) return;
     if (spellProgressOf(word) >= 6) return;
     const frontOn = String((word.review || {}).frontOn || '');
     const dueAt = Date.parse((word.review || {}).dueAt);
@@ -2651,14 +2656,15 @@ function collectWritingQueue() {
 }
 
 function openWritingReview() {
-  const words = ((((state.data || {}).books || {}).writing || {}).words) || [];
+  const words = (((((state.data || {}).books || {}).writing || {}).words) || []).filter(matchesSourceFilter);
   const queue = collectWritingQueue();
+  const scope = state.tagFilter ? `「${escapeHtml(sourceLabel())}」` : '这册';
   if (!queue.length) {
     if (words.length && words.every(word => spellProgressOf(word) >= 6)) {
-      openOverlay(`<div class="modal"><h2>这册不用再复习</h2><p class="help">写作词的进度环都满了，之后不会再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+      openOverlay(`<div class="modal"><h2>${scope}不用再复习</h2><p class="help">这些词的进度环都满了，之后不会再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
       return;
     }
-    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">${scope}里暂时没有到复习时间的词。新词会马上进入复习。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
   openOverlay(`<div class="modal"><h2>开始写作复习</h2><p class="help">拼写：看释义把单词拼出来。不拼写：先只看释义，回车后再看单词，选认识或不熟。认识并且进度增加时会出示进度环。不熟会排到这次最后，明天排在最前。</p><div class="modal-actions"><button type="button" class="primary" id="mode-spell">拼写</button><button type="button" class="secondary" id="mode-read">不拼写</button><button type="button" class="ghost" data-close>取消</button></div></div>`);
@@ -2667,13 +2673,15 @@ function openWritingReview() {
 }
 
 function openReview(oneBook) {
+  const sourceNote = oneBook && state.tagFilter ? ` · ${escapeHtml(sourceLabel())}` : '';
   if (oneBook && state.bookId === 'writing') {
     openWritingReview();
     return;
   }
   const queue = collectReviewQueue(oneBook);
   if (!queue.length) {
-    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    const where = oneBook && state.tagFilter ? `「${escapeHtml(sourceLabel())}」里暂时没有到复习时间的词。` : '';
+    openOverlay(`<div class="modal"><h2>暂时没有到期单词</h2><p class="help">${where}新词会马上进入复习。认识后按遗忘曲线约 20 分钟、1 小时、9 小时、1 天、2 天、6 天再出现。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
   let index = 0;
@@ -2686,7 +2694,7 @@ function openReview(oneBook) {
     openOverlay(`
       <div class="modal">
         <div class="review-card">
-          <p class="progress">${meta.name} · ${index + 1} / ${queue.length}</p>
+          <p class="progress">${meta.name}${sourceNote} · ${index + 1} / ${queue.length}</p>
           <div class="review-word">${escapeHtml(item.word.text)}</div>
           <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
           ${phase === 'ask' ? '<p class="review-meaning">先判断，再看释义</p>' : meaningHtml(item.word)}
@@ -2745,11 +2753,13 @@ function openDictation() {
   let queue = collectReviewQueue(true);
   const usingDue = queue.length > 0;
   if (!queue.length) {
-    queue = currentWords().map(word => ({ bookId: state.bookId, word }));
+    queue = sourceWords().map(word => ({ bookId: state.bookId, word }));
     queue.sort((a, b) => compareReviewItems(a, b));
   }
+  const sourceNote = state.tagFilter ? `${escapeHtml(sourceLabel())} · ` : '';
   if (!queue.length) {
-    openOverlay(`<div class="modal"><h2>还没有可听写的单词</h2><p class="help">先在听力册加入单词，再来听写。有到期词时会优先听写到期的。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    const where = state.tagFilter ? `「${escapeHtml(sourceLabel())}」里还没有单词。` : '先在听力册加入单词，再来听写。';
+    openOverlay(`<div class="modal"><h2>还没有可听写的单词</h2><p class="help">${where}有到期词时会优先听写到期的。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     return;
   }
   let index = 0;
@@ -2765,7 +2775,7 @@ function openDictation() {
       openOverlay(`
         <div class="modal">
           <div class="review-card">
-            <p class="progress">听力 · ${title} · ${index + 1} / ${queue.length}</p>
+            <p class="progress">听力 · ${sourceNote}${title} · ${index + 1} / ${queue.length}</p>
             <p class="dictation-prompt">请听写</p>
             <input id="dt-input" class="dictation-input" type="text" autocomplete="off" spellcheck="false" placeholder="听到的单词或短语">
             <div class="modal-actions" style="justify-content:center">
@@ -2810,7 +2820,7 @@ function openDictation() {
     openOverlay(`
       <div class="modal">
         <div class="review-card">
-          <p class="progress">听力 · ${title} · ${index + 1} / ${queue.length}</p>
+          <p class="progress">听力 · ${sourceNote}${title} · ${index + 1} / ${queue.length}</p>
           <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看答案，再判断')}</p>
           ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
           <div class="review-word">${escapeHtml(item.word.text)}</div>
