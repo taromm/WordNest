@@ -2705,14 +2705,9 @@ function openReview(oneBook) {
             <button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
             <button type="button" class="ghost" data-close>结束</button>
             <button type="button" class="secondary" id="rv-speak">发音</button>
-            ${phase === 'ask' ? `
-              <button type="button" class="danger" id="rv-again">不认识</button>
-              <button type="button" class="secondary" id="rv-hard">模糊</button>
-              <button type="button" class="primary" id="rv-good">认识</button>
-            ` : `
-              <button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button>
-            `}
+            ${phase === 'ask' ? '' : `<button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button>`}
           </div>
+          ${phase === 'ask' ? `<div class="review-rates"><button type="button" class="danger" id="rv-again">不认识</button><button type="button" class="secondary" id="rv-hard">模糊</button><button type="button" class="primary" id="rv-good">认识</button></div>` : ''}
         </div>
       </div>
     `);
