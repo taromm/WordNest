@@ -658,6 +658,44 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   text-align: center;
   padding: 18px 12px 8px;
 }
+.overlay:has(.review-card) {
+  padding: 0;
+  background: var(--paper);
+  align-items: stretch;
+}
+.overlay:has(.review-card) .modal {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px 8vw 56px;
+  overflow: auto;
+}
+.overlay:has(.review-card) .review-card {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 12px 0 0;
+}
+.overlay:has(.review-card) .review-word {
+  font-size: clamp(72px, 11vw, 128px);
+  margin: 28px 0 12px;
+}
+.overlay:has(.review-card) .dictation-prompt {
+  font-size: clamp(56px, 8vw, 96px);
+  margin: 28px 0 12px;
+}
+.overlay:has(.review-card) .modal-actions {
+  margin-top: 40px;
+}
+.overlay:has(.review-card) .modal-actions button {
+  min-width: 112px;
+  padding: 14px 20px;
+  font-size: 17px;
+}
 .review-word, .player-word {
   font-family: var(--serif);
   font-size: clamp(48px, 8vw, 84px);
@@ -900,6 +938,16 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   .notebook-head .modal-actions { width: 100%; }
   .notebook-input { padding: 16px; font-size: 16px; }
   .overlay { padding: 12px; align-items: end; }
+  .overlay:has(.review-card) {
+    padding: 0;
+    align-items: stretch;
+  }
+  .overlay:has(.review-card) .modal {
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    padding: 28px 20px 36px;
+  }
   .word-list { margin-top: 16px; }
   .word-card, .empty-card { padding: 14px 12px; border-radius: 20px; }
   .word-en { font-size: 22px; }
