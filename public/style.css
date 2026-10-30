@@ -698,6 +698,10 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   padding: 14px 20px;
   font-size: 17px;
 }
+body:has(.overlay.open .review-card) .menu-btn,
+body:has(.overlay.open .player-card) .menu-btn {
+  display: none !important;
+}
 .review-word, .player-word {
   font-family: var(--serif);
   font-size: clamp(48px, 8vw, 84px);
@@ -948,7 +952,17 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
     height: 100%;
     max-height: none;
     border-radius: 0;
-    padding: 28px 20px 36px;
+    padding: 72px 20px 36px;
+  }
+  .overlay:has(.review-card) .modal-actions button.ghost[data-close] {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    z-index: 60;
+    min-width: 72px;
+    background: rgba(255, 250, 243, .94);
+    border: 1px solid var(--line);
+    color: var(--ink);
   }
   .word-list { margin-top: 16px; }
   .word-card, .empty-card { padding: 14px 12px; border-radius: 20px; }
