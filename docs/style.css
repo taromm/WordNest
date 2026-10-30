@@ -658,12 +658,12 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   text-align: center;
   padding: 18px 12px 8px;
 }
-.overlay:has(.review-card) {
+.overlay:has(.review-card, .player-card) {
   padding: 0;
   background: var(--paper);
   align-items: stretch;
 }
-.overlay:has(.review-card) .modal {
+.overlay:has(.review-card, .player-card) .modal {
   width: 100%;
   height: 100%;
   max-height: none;
@@ -675,23 +675,25 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   padding: 48px 8vw 56px;
   overflow: auto;
 }
-.overlay:has(.review-card) .review-card {
+.overlay:has(.review-card, .player-card) .review-card,
+.overlay:has(.review-card, .player-card) .player-card {
   width: min(980px, 100%);
   margin: 0 auto;
   padding: 12px 0 0;
 }
-.overlay:has(.review-card) .review-word {
+.overlay:has(.review-card, .player-card) .review-word,
+.overlay:has(.review-card, .player-card) .player-word {
   font-size: clamp(72px, 11vw, 128px);
   margin: 28px 0 12px;
 }
-.overlay:has(.review-card) .dictation-prompt {
+.overlay:has(.review-card, .player-card) .dictation-prompt {
   font-size: clamp(56px, 8vw, 96px);
   margin: 28px 0 12px;
 }
-.overlay:has(.review-card) .modal-actions {
+.overlay:has(.review-card, .player-card) .modal-actions {
   margin-top: 40px;
 }
-.overlay:has(.review-card) .modal-actions button {
+.overlay:has(.review-card, .player-card) .modal-actions button {
   min-width: 112px;
   padding: 14px 20px;
   font-size: 17px;
@@ -938,11 +940,11 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   .notebook-head .modal-actions { width: 100%; }
   .notebook-input { padding: 16px; font-size: 16px; }
   .overlay { padding: 12px; align-items: end; }
-  .overlay:has(.review-card) {
+  .overlay:has(.review-card, .player-card) {
     padding: 0;
     align-items: stretch;
   }
-  .overlay:has(.review-card) .modal {
+  .overlay:has(.review-card, .player-card) .modal {
     height: 100%;
     max-height: none;
     border-radius: 0;
