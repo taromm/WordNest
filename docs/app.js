@@ -470,6 +470,7 @@ function createLocalApi() {
 }
 
 const api = window.wordnest || createLocalApi();
+document.body.classList.toggle('desktop', Boolean(api.desktop));
 
 function publicCloudState(data) {
   const next = JSON.parse(JSON.stringify(data || {}));

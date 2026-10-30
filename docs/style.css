@@ -694,7 +694,7 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   margin-top: 40px;
 }
 .overlay:has(.review-dock) .modal {
-  padding-bottom: 232px;
+  padding-bottom: 276px;
 }
 .listen-line,
 .phonetic-line {
@@ -747,7 +747,7 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(96px + env(safe-area-inset-bottom));
+  bottom: calc(140px + env(safe-area-inset-bottom));
   width: min(720px, calc(100% - 20px));
   margin: 0;
   gap: 10px;
@@ -1046,11 +1046,14 @@ body:has(.overlay.open .player-card) .menu-btn {
     border-radius: 0;
     padding: 72px 20px 36px;
   }
-  .overlay:has(.review-dock) .modal {
+  body:not(.desktop) .overlay:has(.review-dock) .modal {
     padding-bottom: calc(160px + env(safe-area-inset-bottom));
   }
-  .overlay:has(.review-card, .player-card) .review-dock {
+  body:not(.desktop) .overlay:has(.review-card, .player-card) .review-dock {
     bottom: calc(40px + env(safe-area-inset-bottom));
+  }
+  body.desktop .overlay:has(.review-dock) .modal {
+    padding-bottom: calc(236px + env(safe-area-inset-bottom));
   }
   .overlay:has(.review-card, .player-card) .modal-actions:not(:has(button:not(.ghost))) {
     margin-top: 0;
