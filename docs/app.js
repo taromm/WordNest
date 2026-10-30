@@ -2686,18 +2686,19 @@ function openReview(oneBook) {
   }
   let index = 0;
   let phase = 'ask';
+  const listenFirst = oneBook && state.bookId === 'listening';
 
   function paint() {
     const item = queue[index];
     const meta = bookMeta(item.bookId);
     const last = index >= queue.length - 1;
+    const hideWord = listenFirst && phase === 'ask';
     openOverlay(`
       <div class="modal">
         <div class="review-card">
           <p class="progress">${meta.name}${sourceNote} · ${index + 1} / ${queue.length}</p>
-          <div class="review-word">${escapeHtml(item.word.text)}</div>
-          <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
-          ${phase === 'ask' ? '<p class="review-meaning">先判断，再看释义</p>' : meaningHtml(item.word)}
+          ${hideWord ? '<p class="dictation-prompt">请听</p>' : `<div class="review-word">${escapeHtml(item.word.text)}</div><div class="phonetic">${escapeHtml(item.word.phonetic)}</div>`}
+          ${phase === 'ask' ? (hideWord ? '' : '<p class="review-meaning">先判断，再看释义</p>') : meaningHtml(item.word)}
           ${phase === 'show' ? tagHtml(item.word) : ''}
           ${phase === 'show' ? examplePickerHtml(item.word) : ''}
           <div class="modal-actions" style="justify-content:center">
