@@ -2502,10 +2502,12 @@ function openWritingSpellReview(queue, spellMode) {
           <div class="review-card writing-spell">
             <p class="progress">写作${scopeNote} · 看词判断 · ${index + 1} / ${queue.length}</p>
             <div class="review-word">${escapeHtml(item.word.text)}</div>
-            <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+            <div class="phonetic-line"><span class="phonetic">${escapeHtml(item.word.phonetic)}</span>${playButton('sp-speak', '发音')}</div>
             ${meaningHtml(item.word)}
             <div class="modal-actions" style="justify-content:center">
               <button type="button" class="ghost" data-close>结束</button>
+            </div>
+            <div class="review-dock review-rates">
               <button type="button" class="primary" id="sp-know">认识</button>
               <button type="button" class="secondary" id="sp-unsure">不熟</button>
             </div>
@@ -2514,6 +2516,7 @@ function openWritingSpellReview(queue, spellMode) {
       `);
       ui.overlay.querySelector('#sp-know').addEventListener('click', () => markKnown(false));
       ui.overlay.querySelector('#sp-unsure').addEventListener('click', () => parkUnfamiliar(item));
+      ui.overlay.querySelector('#sp-speak').addEventListener('click', () => speak(item.word.text));
       bindJudgeKeys(() => markKnown(true), () => {
         if (phase !== 'judge') return;
         parkUnfamiliar(item);
@@ -2532,8 +2535,10 @@ function openWritingSpellReview(queue, spellMode) {
             <div class="review-word">${escapeHtml(item.word.text)}</div>
             <p class="help">按回车继续</p>
             <div class="modal-actions" style="justify-content:center">
-              <button type="button" class="primary" id="sp-continue">继续</button>
               <button type="button" class="ghost" data-close>结束</button>
+            </div>
+            <div class="review-dock word-nav">
+              <button type="button" class="primary" id="sp-continue">继续</button>
             </div>
           </div>
         </div>
@@ -2559,7 +2564,7 @@ function openWritingSpellReview(queue, spellMode) {
             <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : '先看这个词'}</p>
             ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
             <div class="review-word">${escapeHtml(item.word.text)}</div>
-            <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
+            <div class="phonetic-line"><span class="phonetic">${escapeHtml(item.word.phonetic)}</span>${playButton('sp-speak', '发音')}</div>
             ${meaningHtml(item.word)}
             <p class="help">${full ? '进度已满，之后不再复习。' : ''}<b id="sp-count">${showSeconds}</b> 秒后${again ? '继续拼这个词' : '进入下一词'}，按回车可跳过</p>
             <div class="modal-actions" style="justify-content:center">
@@ -2568,6 +2573,7 @@ function openWritingSpellReview(queue, spellMode) {
           </div>
         </div>
       `);
+      ui.overlay.querySelector('#sp-speak').addEventListener('click', () => speak(item.word.text));
       return;
     }
 
@@ -2581,8 +2587,10 @@ function openWritingSpellReview(queue, spellMode) {
           <div id="spell-examples" class="example-out">正在找可参考的例句…</div>
           <input id="sp-input" class="dictation-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="拼写这个词">
           <div class="modal-actions" style="justify-content:center">
-            <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
             <button type="button" class="ghost" data-close>结束</button>
+          </div>
+          <div class="review-dock word-nav">
+            <button type="button" class="secondary" id="sp-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
             <button type="button" class="primary" id="sp-submit">提交</button>
           </div>
         </div>
@@ -2672,6 +2680,14 @@ function openWritingReview() {
   ui.overlay.querySelector('#mode-read').addEventListener('click', () => openWritingSpellReview(queue, false));
 }
 
+function sidePrevButton(id, disabled) {
+  return `<button type="button" class="side-prev" id="${id}" ${disabled ? 'disabled' : ''}>＜ 上一词</button>`;
+}
+
+function playButton(id, label) {
+  return `<button type="button" class="play-btn" id="${id}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg></button>`;
+}
+
 function openReview(oneBook) {
   const sourceNote = oneBook && state.tagFilter ? ` · ${escapeHtml(sourceLabel())}` : '';
   if (oneBook && state.bookId === 'writing') {
@@ -2693,17 +2709,21 @@ function openReview(oneBook) {
     const meta = bookMeta(item.bookId);
     const last = index >= queue.length - 1;
     const hideWord = listenFirst && phase === 'ask';
-    const playBtn = `<button type="button" class="play-btn" id="rv-speak" aria-label="发音" title="发音"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg></button>`;
+    const playBtn = playButton('rv-speak', '发音');
+    const head = hideWord
+      ? `<div class="listen-line">${sidePrevButton('rv-prev', index === 0)}<p class="dictation-prompt">请听</p>${playBtn}</div>`
+      : phase === 'ask'
+        ? `<div class="listen-line">${sidePrevButton('rv-prev', index === 0)}<div class="review-word">${escapeHtml(item.word.text)}</div>${playBtn}</div><div class="phonetic">${escapeHtml(item.word.phonetic)}</div>`
+        : `<div class="review-word">${escapeHtml(item.word.text)}</div><div class="phonetic-line"><span class="phonetic">${escapeHtml(item.word.phonetic)}</span>${playBtn}</div>`;
     openOverlay(`
       <div class="modal">
         <div class="review-card">
           <p class="progress">${meta.name}${sourceNote} · ${index + 1} / ${queue.length}</p>
-          ${hideWord ? `<div class="listen-line"><p class="dictation-prompt">请听</p>${playBtn}</div>` : `<div class="review-word">${escapeHtml(item.word.text)}</div><div class="phonetic-line"><span class="phonetic">${escapeHtml(item.word.phonetic)}</span>${playBtn}</div>`}
+          ${head}
           ${phase === 'ask' ? (hideWord ? '' : '<p class="review-meaning">先判断，再看释义</p>') : meaningHtml(item.word)}
           ${phase === 'show' ? tagHtml(item.word) : ''}
           ${phase === 'show' ? examplePickerHtml(item.word) : ''}
           <div class="modal-actions" style="justify-content:center">
-            ${phase === 'ask' ? `<button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>` : ''}
             <button type="button" class="ghost" data-close>结束</button>
           </div>
           ${phase === 'ask' ? `<div class="review-dock review-rates"><button type="button" class="danger" id="rv-again">不认识</button><button type="button" class="secondary" id="rv-hard">模糊</button><button type="button" class="primary" id="rv-good">认识</button></div>` : `<div class="review-dock word-nav"><button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button><button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button></div>`}
@@ -2771,13 +2791,13 @@ function openDictation() {
         <div class="modal">
           <div class="review-card">
             <p class="progress">听力 · ${sourceNote}${title} · ${index + 1} / ${queue.length}</p>
-            <p class="dictation-prompt">请听写</p>
+            <div class="listen-line">${sidePrevButton('dt-prev', index === 0)}<p class="dictation-prompt">请听写</p>${playButton('dt-speak', '再听一遍')}</div>
             <input id="dt-input" class="dictation-input" type="text" autocomplete="off" spellcheck="false" placeholder="听到的单词或短语">
             <div class="modal-actions" style="justify-content:center">
-              <button type="button" class="secondary" id="dt-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
               <button type="button" class="ghost" data-close>结束</button>
-              <button type="button" class="secondary" id="dt-speak">再听一遍</button>
-              <button type="button" class="ghost" id="dt-skip">不会</button>
+            </div>
+            <div class="review-dock review-rates">
+              <button type="button" class="secondary" id="dt-skip">不会</button>
               <button type="button" class="primary" id="dt-submit">提交</button>
             </div>
           </div>
@@ -2818,15 +2838,15 @@ function openDictation() {
           <p class="progress">听力 · ${sourceNote}${title} · ${index + 1} / ${queue.length}</p>
           <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看答案，再判断')}</p>
           ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
-          <div class="review-word">${escapeHtml(item.word.text)}</div>
+          <div class="listen-line">${sidePrevButton('dt-prev', index === 0)}<div class="review-word">${escapeHtml(item.word.text)}</div>${playButton('dt-speak', '发音')}</div>
           <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
           ${meaningHtml(item.word)}
           ${tagHtml(item.word)}
           ${examplePickerHtml(item.word)}
           <div class="modal-actions" style="justify-content:center">
-            <button type="button" class="secondary" id="dt-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
             <button type="button" class="ghost" data-close>结束</button>
-            <button type="button" class="secondary" id="dt-speak">发音</button>
+          </div>
+          <div class="review-dock review-rates">
             <button type="button" class="danger" id="rv-again">不认识</button>
             <button type="button" class="secondary" id="rv-hard">模糊</button>
             <button type="button" class="primary" id="rv-good">认识</button>
@@ -2919,7 +2939,7 @@ function openPlayer() {
         <div class="player-card">
           <p class="progress">全部发音 · ${escapeHtml(label)} · ${index + 1} / ${words.length}</p>
           <div class="player-word">${escapeHtml(word.text)}</div>
-          <div class="phonetic">${escapeHtml(word.phonetic)}</div>
+          <div class="phonetic-line"><span class="phonetic">${escapeHtml(word.phonetic)}</span><button type="button" class="play-btn" id="pl-pause" aria-label="${paused ? '继续' : '暂停'}" title="${paused ? '继续' : '暂停'}"><svg viewBox="0 0 24 24" aria-hidden="true">${paused ? '<path d="M8 5.5v13l11-6.5-11-6.5z" fill="currentColor"/>' : '<path d="M7 5h3.2v14H7zM13.8 5H17v14h-3.2z" fill="currentColor"/>'}</svg></button></div>
           ${meaningHtml(word)}
           <label class="player-gap">
             <span>词间间隔</span>
@@ -2927,11 +2947,10 @@ function openPlayer() {
           </label>
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="ghost" data-close>停止</button>
-            <button type="button" class="secondary" id="pl-pause">${paused ? '继续' : '暂停'}</button>
           </div>
-          <div class="word-nav">
-            <button type="button" class="secondary" id="pl-prev">＜ 上一词</button>
-            <button type="button" class="primary" id="pl-next">下一词 ＞</button>
+          <div class="review-dock word-nav">
+            <button type="button" class="secondary" id="pl-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>
+            <button type="button" class="primary" id="pl-next" ${index >= words.length - 1 ? 'disabled' : ''}>下一词 ＞</button>
           </div>
         </div>
       </div>

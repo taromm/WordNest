@@ -701,10 +701,30 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 14px;
+  flex-wrap: nowrap;
 }
 .overlay:has(.review-card) .listen-line .dictation-prompt,
+.overlay:has(.review-card) .listen-line .review-word,
 .phonetic-line .phonetic { margin: 0; }
+.overlay:has(.review-card) .listen-line .dictation-prompt {
+  font-size: clamp(40px, 12vw, 84px);
+}
+.overlay:has(.review-card) .listen-line .review-word {
+  font-size: clamp(36px, 10vw, 84px);
+  min-width: 0;
+}
+.side-prev {
+  flex: none;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #ffe7b6;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .play-btn {
   width: 36px;
   height: 36px;
@@ -722,9 +742,8 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
   width: 15px;
   height: 15px;
   display: block;
-  margin-left: 2px;
 }
-.overlay:has(.review-card) .review-dock {
+.overlay:has(.review-card, .player-card) .review-dock {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
@@ -1023,7 +1042,10 @@ body:has(.overlay.open .player-card) .menu-btn {
   .overlay:has(.review-dock) .modal {
     padding-bottom: calc(108px + env(safe-area-inset-bottom));
   }
-  .overlay:has(.review-card) .modal-actions button.ghost[data-close] {
+  .overlay:has(.review-card, .player-card) .modal-actions:not(:has(button:not(.ghost))) {
+    margin-top: 0;
+  }
+  .overlay:has(.review-card, .player-card) .modal-actions button.ghost[data-close] {
     position: fixed;
     top: max(12px, env(safe-area-inset-top));
     right: max(12px, env(safe-area-inset-right));
