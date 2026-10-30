@@ -693,6 +693,46 @@ h1 { margin: 6px 0 0; font-family: var(--serif); font-size: 54px; font-weight: 6
 .overlay:has(.review-card, .player-card) .modal-actions {
   margin-top: 40px;
 }
+.overlay:has(.review-dock) .modal {
+  padding-bottom: 120px;
+}
+.listen-line,
+.phonetic-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.overlay:has(.review-card) .listen-line .dictation-prompt,
+.phonetic-line .phonetic { margin: 0; }
+.play-btn {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #ffe7b6;
+  color: var(--ink);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.play-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  margin-left: 2px;
+}
+.overlay:has(.review-card) .review-dock {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: min(640px, calc(100% - 32px));
+  margin: 0;
+  z-index: 40;
+}
 .overlay:has(.review-card, .player-card) .modal-actions button {
   min-width: 112px;
   padding: 14px 20px;
@@ -979,6 +1019,9 @@ body:has(.overlay.open .player-card) .menu-btn {
     max-height: none;
     border-radius: 0;
     padding: 72px 20px 36px;
+  }
+  .overlay:has(.review-dock) .modal {
+    padding-bottom: calc(108px + env(safe-area-inset-bottom));
   }
   .overlay:has(.review-card) .modal-actions button.ghost[data-close] {
     position: fixed;

@@ -2693,20 +2693,20 @@ function openReview(oneBook) {
     const meta = bookMeta(item.bookId);
     const last = index >= queue.length - 1;
     const hideWord = listenFirst && phase === 'ask';
+    const playBtn = `<button type="button" class="play-btn" id="rv-speak" aria-label="发音" title="发音"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg></button>`;
     openOverlay(`
       <div class="modal">
         <div class="review-card">
           <p class="progress">${meta.name}${sourceNote} · ${index + 1} / ${queue.length}</p>
-          ${hideWord ? '<p class="dictation-prompt">请听</p>' : `<div class="review-word">${escapeHtml(item.word.text)}</div><div class="phonetic">${escapeHtml(item.word.phonetic)}</div>`}
+          ${hideWord ? `<div class="listen-line"><p class="dictation-prompt">请听</p>${playBtn}</div>` : `<div class="review-word">${escapeHtml(item.word.text)}</div><div class="phonetic-line"><span class="phonetic">${escapeHtml(item.word.phonetic)}</span>${playBtn}</div>`}
           ${phase === 'ask' ? (hideWord ? '' : '<p class="review-meaning">先判断，再看释义</p>') : meaningHtml(item.word)}
           ${phase === 'show' ? tagHtml(item.word) : ''}
           ${phase === 'show' ? examplePickerHtml(item.word) : ''}
           <div class="modal-actions" style="justify-content:center">
             ${phase === 'ask' ? `<button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button>` : ''}
             <button type="button" class="ghost" data-close>结束</button>
-            <button type="button" class="secondary" id="rv-speak">发音</button>
           </div>
-          ${phase === 'ask' ? `<div class="review-rates"><button type="button" class="danger" id="rv-again">不认识</button><button type="button" class="secondary" id="rv-hard">模糊</button><button type="button" class="primary" id="rv-good">认识</button></div>` : `<div class="word-nav"><button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button><button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button></div>`}
+          ${phase === 'ask' ? `<div class="review-dock review-rates"><button type="button" class="danger" id="rv-again">不认识</button><button type="button" class="secondary" id="rv-hard">模糊</button><button type="button" class="primary" id="rv-good">认识</button></div>` : `<div class="review-dock word-nav"><button type="button" class="secondary" id="rv-prev" ${index === 0 ? 'disabled' : ''}>＜ 上一词</button><button type="button" class="primary" id="rv-next">${last ? '完成' : '下一词 ＞'}</button></div>`}
         </div>
       </div>
     `);
