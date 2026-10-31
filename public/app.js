@@ -329,13 +329,41 @@ function createLocalApi() {
     async getState() { return load(); },
     async addWords(bookId, words) {
       const data = load();
+      const book = data.books[bookId];
+      if (!book) throw new Error('未知单词本');
       const added = [];
       const existing = [];
-      for (const item of words) {
-        const found = data.books[bookId].words.find(word => word.text.toLowerCase() === String(item.text).trim().toLowerCase());
-        if (found) { existing.push(found); continue; }
+      const index = new Map((book.words || []).map(word => [String(word.text || '').toLowerCase(), word]));
+      for (const item of words || []) {
+        const text = String((item && item.text) || '').trim();
+        if (!text) continue;
+        const key = text.toLowerCase();
+        if (index.has(key)) {
+          const old = index.get(key);
+          ['meaning', 'ieltsMeaning', 'otherMeanings', 'phonetic', 'example', 'notes'].forEach((field) => {
+            if (!old[field] && item[field]) old[field] = item[field];
+          });
+          const extra = [].concat(item.tags || (item.tag ? [item.tag] : [])).map(tag => String(tag || '').trim()).filter(Boolean);
+          if (extra.length) {
+            const seen = new Set();
+            const merged = [];
+            [].concat(old.tags || [], extra).forEach((tag) => {
+              const value = String(tag || '').trim();
+              if (!value) return;
+              const tagKey = value.toLowerCase();
+              if (seen.has(tagKey)) return;
+              seen.add(tagKey);
+              merged.push(value);
+            });
+            old.tags = merged;
+          }
+          old.updatedAt = new Date().toISOString();
+          existing.push(old);
+          continue;
+        }
         const word = makeWord(item);
-        data.books[bookId].words.unshift(word);
+        book.words.unshift(word);
+        index.set(key, word);
         added.push(word);
       }
       save(data);
@@ -1779,7 +1807,7 @@ function openWordForm(existing, startMode) {
       <div class="modal">
         <h2>${existing ? '编辑单词' : '打字加入'}</h2>
         ${existing ? '' : addModeSwitch('single')}
-        <p class="help">加入后会进入当前「${bookMeta(state.bookId).name}」单词本。手动输入时中文会自动忽略，只保留英文单词或短语。释义会优先展示雅思常考意思，并保留其他义项。</p>
+        <p class="help">加入后会进入当前「${bookMeta(state.bookId).name}」单词本。手动输入时中文会自动忽略，只保留英文单词或短语。如果这个词已经在本册，保存时会把新标签加到原词上，不会再建一条。</p>
         <div class="grid-2">
           <label class="field"><span>单词</span><input id="f-text" value="${escapeHtml(word.text)}" ${existing ? 'readonly' : ''} placeholder="例如：certificate 证书"></label>
           <label class="field"><span>音标</span><input id="f-phonetic" value="${escapeHtml(word.phonetic)}"></label>
@@ -1871,7 +1899,7 @@ function openWordForm(existing, startMode) {
       <div class="modal">
         <h2>批量加入</h2>
         ${addModeSwitch('batch')}
-        <p class="help">每行一个单词或短语，也可用逗号分隔。中文会自动忽略，只识别英文；中文两边的英文会拆成多条。会加入当前「${bookMeta(state.bookId).name}」单词本，已有的词会自动跳过。</p>
+        <p class="help">每行一个单词或短语，也可用逗号分隔。中文会自动忽略，只识别英文。已有的词不会再建一条；填了标签时，会把这个标签加到那些词上。</p>
         <label class="field"><span>来源书 / 标签</span>
           <input id="f-tag" list="tag-list" value="${escapeHtml(tagValue)}" placeholder="例如：剑雅 17、王陆 807">
           <datalist id="tag-list">${collectedTags().map(tag => `<option value="${escapeHtml(tag)}">`).join('')}</datalist>
@@ -1881,7 +1909,7 @@ function openWordForm(existing, startMode) {
         </label>
         <label class="check-row">
           <input id="f-batch-lookup" type="checkbox" checked>
-          <span>加入时自动查释义（有道词典，已在本册的不查）</span>
+          <span>加入时自动查释义（有道词典，已在本册的不查，只补标签）</span>
         </label>
         <p class="help" id="f-status"></p>
         <div class="modal-actions">
@@ -1899,19 +1927,23 @@ function openWordForm(existing, startMode) {
         if (status) status.textContent = '没有识别到英文。请粘贴单词或短语，中文会被忽略。';
         return;
       }
+      const tag = ($('#f-tag').value || '').trim();
       const existingKeys = bookWordKeys(state.bookId);
-      const fresh = items.filter(text => !existingKeys.has(text.toLowerCase()));
-      const skipped = items.length - fresh.length;
-      if (!fresh.length) {
-        if (status) status.textContent = `这 ${items.length} 个词都已在本册，没有新词可加入。`;
+      const fresh = [];
+      const already = [];
+      items.forEach((text) => {
+        if (existingKeys.has(text.toLowerCase())) already.push(text);
+        else fresh.push(text);
+      });
+      if (!fresh.length && !tag) {
+        if (status) status.textContent = `这 ${items.length} 个词都已在本册。填上来源书标签后，可以把这个标签加到原词上。`;
         return;
       }
-      const tag = ($('#f-tag').value || '').trim();
       const doLookup = $('#f-batch-lookup').checked;
       $('#f-save').disabled = true;
-      let filled;
+      let filled = [];
       try {
-        if (doLookup) {
+        if (doLookup && fresh.length) {
           let done = 0;
           if (status) status.textContent = `正在查词 0 / ${fresh.length}…`;
           filled = await mapLimit(fresh, 4, async (text) => {
@@ -1923,12 +1955,18 @@ function openWordForm(existing, startMode) {
         } else {
           filled = fresh.map(text => ({ text, source: 'manual', tags: tag ? [tag] : [] }));
         }
-        const result = await api.addWords(state.bookId, filled);
+        const tagged = tag ? already.map(text => ({ text, source: 'manual', tags: [tag] })) : [];
+        const result = await api.addWords(state.bookId, filled.concat(tagged));
         closeOverlay();
         await reload();
-        const added = (result && result.added && result.added.length) || fresh.length;
-        const existed = skipped + ((result && result.existing && result.existing.length) || 0);
-        openOverlay(`<div class="modal"><h2>已加入本册</h2><p class="help">新增 ${added} 个词条${existed ? `，另有 ${existed} 个已在本册，没有重复添加` : ''}。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+        const added = (result && result.added && result.added.length) || 0;
+        const existed = tag ? already.length : 0;
+        const skipped = tag ? 0 : already.length;
+        const parts = [];
+        if (added) parts.push(`新增 ${added} 个词条`);
+        if (existed) parts.push(`已给 ${existed} 个已有词加上「${tag}」`);
+        if (skipped) parts.push(`${skipped} 个已在本册，没有重复添加`);
+        openOverlay(`<div class="modal"><h2>已加入本册</h2><p class="help">${parts.join('，') || '没有新的改动'}。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
       } catch (err) {
         if (status) status.textContent = err.message || '加入失败';
         $('#f-save').disabled = false;
@@ -2209,16 +2247,18 @@ function openScan() {
       box.innerHTML = pending.map((item, index) => {
         const exists = existingKeys.has(String(item.text || '').trim().toLowerCase());
         if (exists) existingCount += 1;
-        const checked = !exists && (/\s/.test(item.text) || item.text.length >= 3) ? 'checked' : '';
-        return `<label class="chip${exists ? ' existing' : ''}"><input type="checkbox" data-i="${index}" ${checked} ${exists ? 'disabled' : ''}> ${escapeHtml(item.text)}${exists ? '<small>已有</small>' : ''}</label>`;
+        const checked = (/\s/.test(item.text) || item.text.length >= 3) ? 'checked' : '';
+        return `<label class="chip${exists ? ' existing' : ''}"><input type="checkbox" data-i="${index}" ${checked}> ${escapeHtml(item.text)}${exists ? '<small>已有，可加标签</small>' : ''}</label>`;
       }).join('');
       const freshCount = pending.length - existingCount;
-      const skipNote = existingCount ? `，${existingCount} 个已在本册，已跳过` : '';
+      const skipNote = existingCount ? `，其中 ${existingCount} 个已在本册，填了标签就会加到原词上` : '';
       status.textContent = scanMode === 'all'
         ? `整页识别到 ${pending.length} 个词条${skipNote}。请确认后加入。`
         : `从${colorName}中识别到 ${pending.length} 个单词${skipNote}。请确认后加入。`;
-      addBtn.disabled = freshCount === 0;
-      if (!freshCount) status.textContent = `识别到的 ${pending.length} 个词条都已在本册，无需重复加入。`;
+      addBtn.disabled = false;
+      if (!freshCount && !((ui.overlay.querySelector('#scan-tag').value || '').trim())) {
+        status.textContent = `识别到的 ${pending.length} 个词条都已在本册。填上标签后，可以把这个标签加到原词上。`;
+      }
     } catch (err) {
       if (id !== runId) return;
       status.textContent = err.message || '识别失败';
@@ -2246,30 +2286,43 @@ function openScan() {
   };
   addBtn.addEventListener('click', async () => {
     const existingKeys = bookWordKeys(state.bookId);
-    const selected = [...box.querySelectorAll('input:checked:not(:disabled)')]
+    const selected = [...box.querySelectorAll('input:checked')]
       .map(input => pending[Number(input.dataset.i)])
-      .filter(item => item && !existingKeys.has(String(item.text || '').trim().toLowerCase()));
+      .filter(Boolean);
     if (!selected.length) {
-      status.textContent = '没有新词可加入。已在本册的词不会重复添加。';
+      status.textContent = '请先勾选要加入的词。';
+      return;
+    }
+    const tag = (ui.overlay.querySelector('#scan-tag').value || '').trim();
+    const fresh = selected.filter(item => !existingKeys.has(String(item.text || '').trim().toLowerCase()));
+    const already = selected.filter(item => existingKeys.has(String(item.text || '').trim().toLowerCase()));
+    if (!fresh.length && !tag) {
+      status.textContent = '这些词已在本册。填上标签后，可以把这个标签加到原词上。';
       return;
     }
     addBtn.disabled = true;
-    status.textContent = `正在查词 0 / ${selected.length}…`;
-    const tag = (ui.overlay.querySelector('#scan-tag').value || '').trim();
-    let done = 0;
-    const filled = await mapLimit(selected, 4, async (item) => {
-      const extra = await lookupWord(item.text);
-      done += 1;
-      status.textContent = `正在查词 ${done} / ${selected.length}…`;
-      return Object.assign({ source: item.source || 'ocr', tags: tag ? [tag] : [] }, extra, { text: item.text });
-    });
-    const result = await api.addWords(state.bookId, filled);
+    let filled = [];
+    if (fresh.length) {
+      status.textContent = `正在查词 0 / ${fresh.length}…`;
+      let done = 0;
+      filled = await mapLimit(fresh, 4, async (item) => {
+        const extra = await lookupWord(item.text);
+        done += 1;
+        status.textContent = `正在查词 ${done} / ${fresh.length}…`;
+        return Object.assign({ source: item.source || 'ocr', tags: tag ? [tag] : [] }, extra, { text: item.text });
+      });
+    }
+    const tagged = tag ? already.map(item => ({ text: item.text, source: item.source || 'ocr', tags: [tag] })) : [];
+    const result = await api.addWords(state.bookId, filled.concat(tagged));
     closeOverlay();
     await reload();
-    const added = (result && result.added && result.added.length) || selected.length;
-    const skipped = (result && result.existing && result.existing.length) || 0;
-    if (skipped) {
-      openOverlay(`<div class="modal"><h2>已加入本册</h2><p class="help">新增 ${added} 个词条，另有 ${skipped} 个本来就在本册，没有重复添加。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
+    const added = (result && result.added && result.added.length) || 0;
+    const parts = [];
+    if (added) parts.push(`新增 ${added} 个词条`);
+    if (tag && already.length) parts.push(`已给 ${already.length} 个已有词加上「${tag}」`);
+    if (!tag && already.length) parts.push(`${already.length} 个已在本册，没有重复添加`);
+    if (parts.length) {
+      openOverlay(`<div class="modal"><h2>已加入本册</h2><p class="help">${parts.join('，')}。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
     }
   });
 }

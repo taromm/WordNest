@@ -33,6 +33,20 @@ test('adding the same word does not delete the original', () => {
   assert.equal(store.getState().books.speaking.words.find(word => word.text === 'lucid').meaning, '清晰的');
 });
 
+test('adding an existing word merges a new tag instead of skipping it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordnest-'));
+  const store = new Store(path.join(dir, 'data.json'));
+  store.state = emptyState();
+  store.addWords('reading', [{ text: 'keep', tags: ['剑雅 17'] }]);
+  const result = store.addWords('reading', [{ text: 'Keep', tags: ['王陆'] }]);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.existing.length, 1);
+  assert.equal(store.getState().books.reading.words.length, 1);
+  const tags = store.getState().books.reading.words[0].tags;
+  assert.ok(tags.includes('剑雅 17'));
+  assert.ok(tags.includes('王陆'));
+});
+
 test('import merges and keeps previous memory', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordnest-'));
   const store = new Store(path.join(dir, 'data.json'));
