@@ -27,4 +27,11 @@ contextBridge.exposeInMainWorld('wordnest', {
     ipcRenderer.on('review:start', wrapped);
     return () => ipcRenderer.removeListener('review:start', wrapped);
   },
+  checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
+  applyUpdate: () => ipcRenderer.invoke('app:applyUpdate'),
+  onUpdateAvailable: (handler) => {
+    const wrapped = (_, info) => handler(info);
+    ipcRenderer.on('app:update-available', wrapped);
+    return () => ipcRenderer.removeListener('app:update-available', wrapped);
+  },
 });

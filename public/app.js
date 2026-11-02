@@ -3705,7 +3705,44 @@ function bindChrome() {
   const scanButton = document.getElementById('btn-scan');
   if (!api.desktop && scanButton) scanButton.hidden = true;
   if (api.onStartReview) api.onStartReview(() => openReview(false));
+  bindUpdateBanner();
   if (window.speechSynthesis && window.speechSynthesis.getVoices) window.speechSynthesis.getVoices();
+}
+
+function bindUpdateBanner() {
+  const banner = document.getElementById('update-banner');
+  if (!banner || !api.desktop || !api.checkUpdate) return;
+  const copy = document.getElementById('update-copy');
+  const apply = document.getElementById('update-apply');
+  const later = document.getElementById('update-later');
+  let dismissed = false;
+  const show = () => {
+    if (dismissed) return;
+    banner.hidden = false;
+  };
+  later.addEventListener('click', () => {
+    dismissed = true;
+    banner.hidden = true;
+  });
+  apply.addEventListener('click', async () => {
+    apply.disabled = true;
+    later.disabled = true;
+    if (copy) copy.textContent = '正在更新，完成后会重新打开…';
+    try {
+      await api.applyUpdate();
+    } catch (err) {
+      apply.disabled = false;
+      later.disabled = false;
+      if (copy) copy.textContent = err.message || '更新失败，可以稍后在项目目录手动 git pull。';
+    }
+  });
+  const ask = () => {
+    api.checkUpdate().then((info) => {
+      if (info && info.available) show();
+    }).catch(() => {});
+  };
+  if (api.onUpdateAvailable) api.onUpdateAvailable(() => show());
+  setTimeout(ask, 1500);
 }
 
 function boot() {

@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const { execFile } = require('node:child_process');
 const {
   app,
   BrowserWindow,
@@ -181,6 +182,51 @@ function createTray() {
   ]));
 }
 
+function repoRoot() {
+  const candidates = [__dirname, process.cwd()];
+  for (const dir of candidates) {
+    if (dir && fs.existsSync(path.join(dir, '.git'))) return dir;
+  }
+  return '';
+}
+
+function runGit(args, cwd) {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { cwd, timeout: 90000, windowsHide: true }, (err, stdout, stderr) => {
+      if (err) {
+        const detail = String(stderr || stdout || err.message || '').trim();
+        reject(new Error(detail || 'git 失败'));
+        return;
+      }
+      resolve(String(stdout || '').trim());
+    });
+  });
+}
+
+async function checkAppUpdate() {
+  const root = repoRoot();
+  if (!root) return { available: false };
+  await runGit(['fetch', '--quiet', 'origin', 'main'], root);
+  const local = await runGit(['rev-parse', 'HEAD'], root);
+  const remote = await runGit(['rev-parse', 'origin/main'], root);
+  if (!remote || remote === local) return { available: false };
+  try {
+    await runGit(['merge-base', '--is-ancestor', 'HEAD', 'origin/main'], root);
+  } catch (_) {
+    return { available: false };
+  }
+  return { available: true };
+}
+
+async function applyAppUpdate() {
+  const root = repoRoot();
+  if (!root) throw new Error('当前不是从项目目录打开的，没法在这里直接更新。');
+  await runGit(['pull', '--ff-only', 'origin', 'main'], root);
+  quitting = true;
+  app.relaunch();
+  app.exit(0);
+}
+
 function registerIpc() {
   ipcMain.handle('store:get', () => store.getState());
   ipcMain.handle('store:addWords', (_, { bookId, words }) => store.addWords(bookId, words));
@@ -237,6 +283,8 @@ function registerIpc() {
   });
   ipcMain.handle('dict:lookup', async (_, word) => lookupWord(word));
   ipcMain.handle('dict:examples', async (_, payload) => lookupExamples((payload || {}).word, (payload || {}).sense));
+  ipcMain.handle('app:checkUpdate', () => checkAppUpdate());
+  ipcMain.handle('app:applyUpdate', () => applyAppUpdate());
 }
 
 app.whenReady().then(() => {
@@ -249,6 +297,20 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   startReminderLoop();
+  setTimeout(() => {
+    checkAppUpdate().then((info) => {
+      if (info && info.available && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:update-available', info);
+      }
+    }).catch(() => {});
+  }, 4000);
+  setInterval(() => {
+    checkAppUpdate().then((info) => {
+      if (info && info.available && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:update-available', info);
+      }
+    }).catch(() => {});
+  }, 30 * 60 * 1000);
   app.on('activate', () => showWindow());
 });
 
