@@ -6,37 +6,19 @@
 
 ## 在 Mac 上运行
 
-需要 [Node.js 18+](https://nodejs.org/)（建议 20）。源码在 GitHub：[taromm/WordNest](https://github.com/taromm/WordNest)。
+到 [Releases](https://github.com/taromm/WordNest/releases/latest) 下载对应芯片的 `dmg`：Apple 芯片选 `arm64`，Intel 选 `x64`。打开后把「词栖」拖进「应用程序」。
 
-第一次在 Mac 上：
+这个安装包没有 Apple 签名。第一次打开如果被拦截，在「应用程序」里对词栖按住 Control 再点「打开」。
 
-```bash
-git clone https://github.com/taromm/WordNest.git
-cd WordNest
-npm install
-npm start
-```
-
-如果 `git clone` / `git pull` 要登录，不要填 GitHub 网站密码（已经不能用来推拉代码）。用 [Personal Access Token](https://github.com/settings/tokens) 当密码，或在 GitHub 账号里加上这台电脑的 SSH 公钥后改用：
-
-```bash
-git clone git@github.com:taromm/WordNest.git
-```
-
-首次启动会打开「词栖」窗口，菜单栏也会留下托盘图标。关闭窗口不会退出，方便到点提醒；要退出请用托盘菜单里的「退出」，或 Dock 图标右键退出。
+关闭窗口不会退出，方便到点提醒。要退出请用托盘菜单里的「退出」，或 Dock 图标右键退出。
 
 ### 以后更新
 
-不要再往旧的 `.app` 里逐个替换源码。在已经 clone 过的目录里：
+已安装的 App 启动后会看一眼最新发布。有新版本时，窗口右下角出现提示，点「更新并重启」即可下载、替换并重新打开。单词存在用户目录，不在安装包里，更新不会清掉。
 
-```bash
-cd WordNest
-git pull
-npm install
-npm start
-```
+请把 App 放在「应用程序」里再更新。如果是直接从磁盘映像里打开的，先拖进去。
 
-`git pull` 只更新程序，**不会清空单词本**。数据仍在下面「数据在哪」里写的用户目录。如果 `npm install` 没有新依赖，也可以直接 `npm start`。
+从源码运行（`npm start`）时，仍是项目目录里 `git pull` 后重启，右下角按钮做的就是这件事。
 
 ## 手机网页和覆盖同步
 
@@ -52,7 +34,7 @@ https://taromm.github.io/WordNest/
 
 1. 打开 [gist.github.com](https://gist.github.com)，新建 **Secret** gist。文件名填 `wordnest-data.json`，内容先写 `{}`，创建后复制地址。
 2. 打开 [GitHub Tokens](https://github.com/settings/tokens)，新建 classic token，勾选 **gist**，复制 `ghp_` 开头的令牌。只在本机保存，不要发给别人、不要提交到仓库。
-3. Mac 桌面版先 `git pull` 再 `npm start`。电脑和手机网页都进入「设置与备份」，填同一组 Gist 和 Token，点保存。这一步以后不用重复。
+3. 电脑和手机网页都进入「设置与备份」，填同一组 Gist 和 Token，点保存。这一步以后不用重复。
 4. **第一次请在电脑点「上传云端」**（侧栏或设置里都有）。之后电脑改完词就上传，手机打开菜单点「下载云端」。反过来也一样。后操作的会整份覆盖先改的，不要两边同时改同一批词。
 
 Token 只存在各设备本地，上传时会从 JSON 里去掉。

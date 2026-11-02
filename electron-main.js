@@ -2,7 +2,8 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
-const { execFile } = require('node:child_process');
+const https = require('node:https');
+const { execFile, spawn } = require('node:child_process');
 const {
   app,
   BrowserWindow,
@@ -182,6 +183,9 @@ function createTray() {
   ]));
 }
 
+const RELEASE_API = 'https://api.github.com/repos/taromm/WordNest/releases/latest';
+let pendingUpdate = null;
+
 function repoRoot() {
   const candidates = [__dirname, process.cwd()];
   for (const dir of candidates) {
@@ -203,7 +207,93 @@ function runGit(args, cwd) {
   });
 }
 
-async function checkAppUpdate() {
+function isNewerVersion(remote, local) {
+  const parse = (value) => String(value || '').replace(/^v/, '').split('.').map((part) => parseInt(part, 10) || 0);
+  const left = parse(remote);
+  const right = parse(local);
+  for (let i = 0; i < 3; i += 1) {
+    if ((left[i] || 0) !== (right[i] || 0)) return (left[i] || 0) > (right[i] || 0);
+  }
+  return false;
+}
+
+function fetchJson(url, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error('检查更新失败'));
+      return;
+    }
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'Wordnest', Accept: 'application/vnd.github+json' },
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        fetchJson(res.headers.location, redirects + 1).then(resolve, reject);
+        return;
+      }
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        if (res.statusCode === 404) {
+          resolve(null);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error('检查更新失败'));
+          return;
+        }
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch (err) {
+          reject(err);
+        }
+      });
+    });
+    req.on('error', reject);
+  });
+}
+
+function downloadFile(url, dest, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error('下载更新失败'));
+      return;
+    }
+    const req = https.get(url, { headers: { 'User-Agent': 'Wordnest' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        downloadFile(res.headers.location, dest, redirects + 1).then(resolve, reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error('下载更新失败'));
+        return;
+      }
+      const file = fs.createWriteStream(dest);
+      res.pipe(file);
+      file.on('finish', () => file.close((err) => (err ? reject(err) : resolve())));
+      file.on('error', (err) => file.close(() => reject(err)));
+    });
+    req.on('error', reject);
+  });
+}
+
+function pickMacZip(assets) {
+  const list = (assets || []).filter((item) => /-mac-.*\.zip$/i.test(item.name || '') && item.browser_download_url);
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  return list.find((item) => item.name.includes(`-mac-${arch}.`))
+    || list.find((item) => item.name.includes('-mac-universal.'))
+    || null;
+}
+
+function currentAppBundle() {
+  const bundle = path.resolve(process.execPath, '../../..');
+  if (!bundle.endsWith('.app')) throw new Error('找不到正在运行的应用。');
+  return bundle;
+}
+
+async function checkGitUpdate() {
   const root = repoRoot();
   if (!root) return { available: false };
   await runGit(['fetch', '--quiet', 'origin', 'main'], root);
@@ -218,13 +308,90 @@ async function checkAppUpdate() {
   return { available: true };
 }
 
-async function applyAppUpdate() {
+async function applyGitUpdate() {
   const root = repoRoot();
   if (!root) throw new Error('当前不是从项目目录打开的，没法在这里直接更新。');
   await runGit(['pull', '--ff-only', 'origin', 'main'], root);
   quitting = true;
   app.relaunch();
   app.exit(0);
+}
+
+async function checkReleaseUpdate() {
+  if (process.platform !== 'darwin') return { available: false };
+  const release = await fetchJson(RELEASE_API);
+  if (!release) return { available: false };
+  const version = String(release.tag_name || '').replace(/^v/, '');
+  const asset = pickMacZip(release.assets);
+  if (!asset || !isNewerVersion(version, app.getVersion())) {
+    pendingUpdate = null;
+    return { available: false };
+  }
+  pendingUpdate = { version, url: asset.browser_download_url };
+  return { available: true, version };
+}
+
+async function applyReleaseUpdate() {
+  if (!pendingUpdate) {
+    const info = await checkReleaseUpdate();
+    if (!info.available) throw new Error('现在已经是最新版本。');
+  }
+  const bundle = currentAppBundle();
+  try {
+    fs.accessSync(path.dirname(bundle), fs.constants.W_OK);
+  } catch (_) {
+    throw new Error('请先把词栖拖进「应用程序」文件夹，再点更新。');
+  }
+  const tempRoot = path.join(app.getPath('temp'), 'wordnest-update');
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  fs.mkdirSync(tempRoot, { recursive: true });
+  const zipPath = path.join(tempRoot, 'update.zip');
+  const extractDir = path.join(tempRoot, 'unpacked');
+  fs.mkdirSync(extractDir, { recursive: true });
+  await downloadFile(pendingUpdate.url, zipPath);
+  await new Promise((resolve, reject) => {
+    execFile('ditto', ['-x', '-k', zipPath, extractDir], { timeout: 180000 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(String(stderr || stdout || err.message || '解压更新失败').trim()));
+      else resolve();
+    });
+  });
+  const appName = fs.readdirSync(extractDir).find((name) => name.endsWith('.app'));
+  if (!appName) throw new Error('更新包里没有应用。');
+  const scriptPath = path.join(tempRoot, 'apply.sh');
+  fs.writeFileSync(scriptPath, `#!/bin/bash
+pid="$1"
+src="$2"
+dest="$3"
+case "$dest" in *.app) ;; *) exit 1 ;; esac
+case "$src" in *.app) ;; *) exit 1 ;; esac
+while kill -0 "$pid" 2>/dev/null; do
+  sleep 0.3
+done
+rm -rf "$dest"
+ditto "$src" "$dest"
+xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
+open "$dest"
+`, { mode: 0o755 });
+  const child = spawn('bash', [scriptPath, String(process.pid), path.join(extractDir, appName), bundle], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  setTimeout(() => {
+    quitting = true;
+    app.quit();
+  }, 400);
+  return { restarting: true };
+}
+
+async function checkAppUpdate() {
+  if (app.isPackaged) return checkReleaseUpdate();
+  return checkGitUpdate();
+}
+
+async function applyAppUpdate() {
+  if (app.isPackaged) return applyReleaseUpdate();
+  return applyGitUpdate();
 }
 
 function registerIpc() {

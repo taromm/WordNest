@@ -3716,8 +3716,13 @@ function bindUpdateBanner() {
   const apply = document.getElementById('update-apply');
   const later = document.getElementById('update-later');
   let dismissed = false;
-  const show = () => {
+  const show = (info) => {
     if (dismissed) return;
+    if (copy) {
+      copy.textContent = info && info.version
+        ? `发现新版本 ${info.version}。点下面即可更新，并重新打开。单词不会被清掉。`
+        : '点下面即可更新，并重新打开。单词不会被清掉。';
+    }
     banner.hidden = false;
   };
   later.addEventListener('click', () => {
@@ -3727,21 +3732,21 @@ function bindUpdateBanner() {
   apply.addEventListener('click', async () => {
     apply.disabled = true;
     later.disabled = true;
-    if (copy) copy.textContent = '正在更新，完成后会重新打开…';
+    if (copy) copy.textContent = '正在下载更新，完成后会重新打开…';
     try {
       await api.applyUpdate();
     } catch (err) {
       apply.disabled = false;
       later.disabled = false;
-      if (copy) copy.textContent = err.message || '更新失败，可以稍后在项目目录手动 git pull。';
+      if (copy) copy.textContent = err.message || '更新失败，可以稍后再试。';
     }
   });
   const ask = () => {
     api.checkUpdate().then((info) => {
-      if (info && info.available) show();
+      if (info && info.available) show(info);
     }).catch(() => {});
   };
-  if (api.onUpdateAvailable) api.onUpdateAvailable(() => show());
+  if (api.onUpdateAvailable) api.onUpdateAvailable((info) => show(info));
   setTimeout(ask, 1500);
 }
 
