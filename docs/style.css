@@ -1109,9 +1109,9 @@ body {
   letter-spacing: .005em;
 }
 body::before {
-  opacity: .38;
-  filter: blur(calc(var(--wallpaper-blur) + 3px)) saturate(.82);
-  transform: scale(1.08);
+  opacity: 1;
+  filter: blur(var(--wallpaper-blur));
+  transform: scale(1.04);
 }
 body::after {
   content: "";
@@ -1119,9 +1119,7 @@ body::after {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 72% 12%, rgba(255, 246, 228, .44), transparent 32%),
-    linear-gradient(135deg, rgba(245, 239, 230, .68), rgba(248, 242, 234, .82));
+  background: linear-gradient(180deg, rgba(255, 255, 255, .12), rgba(255, 246, 232, .16));
 }
 
 ::selection {
@@ -1306,9 +1304,7 @@ a:focus-visible {
 
 .stage {
   padding: 24px 30px 48px;
-  background:
-    radial-gradient(circle at 96% 0, rgba(226, 171, 103, .12), transparent 26%),
-    linear-gradient(180deg, rgba(250,248,244,.94), rgba(246,242,235,.91));
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 246, 232, .06) 180px, transparent);
 }
 .stage-inner {
   width: min(1180px, 100%);
@@ -1397,18 +1393,16 @@ h1 {
 }
 
 .toolbar {
-  position: sticky;
-  top: 14px;
+  position: relative;
+  top: auto;
   z-index: 12;
   margin-top: 14px;
   padding: 15px 16px 14px;
   gap: 12px;
-  background: rgba(255,253,249,.9);
+  background: rgba(255,253,249,.86);
   border: 1px solid rgba(255,255,255,.78);
   border-radius: 20px;
   box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(18px) saturate(1.05);
-  -webkit-backdrop-filter: blur(18px) saturate(1.05);
 }
 .toolbar-filters {
   display: grid;
@@ -1782,11 +1776,11 @@ h1 {
 
 @media (max-width: 960px) {
   body::before {
-    opacity: .26;
-    filter: blur(calc(var(--wallpaper-blur) + 5px)) saturate(.72);
+    opacity: 1;
+    filter: blur(var(--wallpaper-blur));
   }
   body::after {
-    background: linear-gradient(180deg, rgba(248,244,237,.72), rgba(246,241,233,.84));
+    background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,246,232,.14));
   }
   body.modal-open,
   body.menu-open { overflow: hidden; }
@@ -1794,7 +1788,7 @@ h1 {
   .desk { overflow: hidden; }
   .stage {
     padding: max(12px, env(safe-area-inset-top)) 12px calc(108px + env(safe-area-inset-bottom));
-    background: rgba(248,245,239,.77);
+    background: transparent;
   }
   .stage-inner { width: 100%; }
 
