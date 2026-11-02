@@ -1166,12 +1166,13 @@ a:focus-visible {
 .sidebar {
   padding: 24px 16px 15px;
   gap: 14px;
-  color: #fffaf1;
+  color: #5c4032;
   background:
-    radial-gradient(circle at 20% 0, rgba(227, 167, 100, .16), transparent 30%),
-    linear-gradient(180deg, rgba(67, 53, 45, .97), rgba(51, 41, 36, .98));
-  border-right: 1px solid rgba(255, 255, 255, .08);
-  box-shadow: 14px 0 42px rgba(42, 31, 25, .12);
+    linear-gradient(180deg, rgba(255, 246, 236, .86), rgba(255, 228, 214, .78));
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  border-right: 1px solid rgba(255, 255, 255, .62);
+  box-shadow: 10px 0 32px rgba(150, 90, 70, .08);
 }
 .sidebar-main {
   gap: 18px;
@@ -1188,7 +1189,7 @@ a:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.55), 0 8px 22px rgba(20, 12, 8, .16);
 }
 .brand strong { font-size: 21px; }
-.brand span { color: rgba(255, 250, 241, .58); letter-spacing: .08em; }
+.brand span { color: rgba(92, 64, 50, .62); letter-spacing: .08em; }
 
 .book-nav { gap: 7px; }
 .book-btn {
@@ -1214,7 +1215,7 @@ a:focus-visible {
   height: 40px;
   place-items: center;
   color: var(--book-accent);
-  background: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.62);
   border-radius: 12px;
 }
 .book-icon svg { width: 22px; height: 22px; }
@@ -1222,26 +1223,26 @@ a:focus-visible {
 .book-copy b { display: block; font-size: 15px; }
 .book-btn small {
   margin-top: 2px;
-  color: rgba(255, 250, 241, .5);
+  color: rgba(92, 64, 50, .58);
   font-size: 11px;
 }
 .book-btn.active {
-  background: rgba(255,255,255,.11);
-  border-color: rgba(255,255,255,.09);
+  background: rgba(255,255,255,.72);
+  border-color: rgba(255,255,255,.8);
   box-shadow: inset 3px 0 0 var(--book-accent);
 }
-.book-btn.active .book-icon { background: rgba(255,255,255,.12); }
+.book-btn.active .book-icon { background: #fff; }
 .badge {
   min-width: 25px;
   height: 25px;
   padding: 0 7px;
   color: #33261e;
   background: var(--book-accent);
-  box-shadow: 0 4px 12px rgba(0,0,0,.12);
+  box-shadow: 0 4px 12px rgba(120, 70, 40, .12);
 }
 .badge.empty {
-  color: rgba(255,250,241,.42);
-  background: rgba(255,255,255,.07);
+  color: rgba(92, 64, 50, .45);
+  background: rgba(255,255,255,.55);
   box-shadow: none;
 }
 
@@ -1250,12 +1251,18 @@ a:focus-visible {
   align-self: end;
   min-height: 116px;
   padding: 15px;
-  border-color: rgba(255,255,255,.11);
+  border-color: rgba(255,255,255,.7);
   border-radius: 17px;
-  background: rgba(255,255,255,.055);
+  background: rgba(255,255,255,.48);
+  color: #5c4032;
 }
 .exam-card strong { font-size: 19px; }
-.exam-card:hover { background: rgba(255,255,255,.09); }
+.exam-card:hover { background: rgba(255,255,255,.66); }
+.exam-kicker,
+.exam-card .exam-note,
+.exam-card .exam-date,
+.exam-units small { color: rgba(92, 64, 50, .62); }
+.exam-units span { background: rgba(255,255,255,.55); }
 .exam-units { gap: 4px; }
 .exam-units span { padding: 7px 0 5px; border-radius: 10px; }
 .exam-units b { font-size: 18px; }
@@ -1264,9 +1271,9 @@ a:focus-visible {
 .sidebar-actions .ghost {
   min-height: 38px;
   padding: 8px 9px;
-  border-color: rgba(255,255,255,.14);
-  color: rgba(255,250,241,.83);
-  background: rgba(255,255,255,.035);
+  border-color: rgba(120, 78, 52, .16);
+  color: #6a4b38;
+  background: rgba(255,255,255,.46);
 }
 .sidebar-actions #btn-review-due {
   display: flex;
@@ -1292,14 +1299,14 @@ a:focus-visible {
 }
 #btn-review-due small { opacity: .62; font-size: 11px; }
 .sidebar-actions #btn-review-due.is-complete {
-  color: rgba(255,250,241,.78);
-  background: rgba(255,255,255,.07);
-  border-color: rgba(255,255,255,.12);
+  color: #6a4b38;
+  background: rgba(255,255,255,.46);
+  border-color: rgba(120, 78, 52, .16);
   box-shadow: none;
 }
 .data-hint {
   padding: 0 4px;
-  color: rgba(255,250,241,.38);
+  color: rgba(92, 64, 50, .55);
 }
 
 .stage {
@@ -1820,10 +1827,10 @@ h1 {
     width: min(336px, 88vw);
     max-width: 88vw;
     padding: max(76px, calc(env(safe-area-inset-top) + 68px)) 15px max(16px, env(safe-area-inset-bottom));
+    color: #5c4032;
     background:
-      radial-gradient(circle at 15% 0, rgba(227,167,100,.17), transparent 30%),
-      linear-gradient(180deg, #43362f, #332a25);
-    box-shadow: 20px 0 60px rgba(28,20,17,.3);
+      linear-gradient(180deg, rgba(255, 246, 236, .94), rgba(255, 228, 214, .92));
+    box-shadow: 20px 0 48px rgba(120, 70, 50, .16);
   }
   .exam-slot { flex: 0 0 auto; }
   .exam-card { min-height: 102px; }
@@ -1919,23 +1926,26 @@ h1 {
     box-shadow: 0 7px 24px rgba(62,45,34,.065);
   }
   .word-card {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 15px 14px 11px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 14px 8px 14px 14px;
   }
   .word-en { font-size: 24px; }
   .row-actions {
     flex-direction: row;
-    justify-content: flex-end;
-    padding-top: 9px;
-    border-top: 1px solid rgba(74,57,45,.08);
+    align-self: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0;
+    border-top: 0;
     opacity: 1;
   }
   .icon-btn,
   .icon-btn.ghost,
   .icon-btn.danger {
-    width: 42px;
-    height: 40px;
-    min-width: 42px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
   }
   .empty-card {
     padding: 40px 20px 36px;
