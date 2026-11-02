@@ -7,8 +7,16 @@ const BOOKS = [
   { id: 'speaking', name: '口语', en: 'Speaking', hint: '说出口的词', speak: true, color: 'speaking' },
 ];
 
+const BOOK_ICONS = {
+  reading: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5A3.5 3.5 0 0 1 8 4h4v15H8a3.5 3.5 0 0 0-3.5 1.5v-15Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19.5 5.5A3.5 3.5 0 0 0 16 4h-4v15h4a3.5 3.5 0 0 1 3.5 1.5v-15Z" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
+  listening: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 13v-1a7.5 7.5 0 0 1 15 0v1M4.5 13v4a2 2 0 0 0 2 2H8v-7H6.5a2 2 0 0 0-2 2Zm15 0v4a2 2 0 0 1-2 2H16v-7h1.5a2 2 0 0 1 2 2Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+  writing: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 18.5 1-4L16.8 3.7a1.8 1.8 0 0 1 2.5 0l1 1a1.8 1.8 0 0 1 0 2.5L9.5 18l-4.5.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m14.8 5.7 3.5 3.5M5 21h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  speaking: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M7.5 11.5h.01M12 11.5h.01M16.5 11.5h.01" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+};
+
 const ui = {
   nav: document.getElementById('book-nav'),
+  mobileNav: document.getElementById('mobile-nav'),
   title: document.getElementById('book-title'),
   en: document.getElementById('book-en'),
   hint: document.getElementById('book-hint'),
@@ -20,6 +28,8 @@ const ui = {
   dictation: document.getElementById('btn-dictation'),
   exam: document.getElementById('btn-exam'),
   dataHint: document.getElementById('data-hint'),
+  reviewDue: document.getElementById('btn-review-due'),
+  toast: document.getElementById('toast'),
 };
 
 function emptyRendererState() {
@@ -246,6 +256,14 @@ function dueInBook(bookId) {
   if (bookId === 'writing') return collectWritingQueue().length;
   const words = (((state.data || {}).books || {})[bookId] || {}).words || [];
   return words.filter(word => isDue(word)).length;
+}
+
+function totalDueCount() {
+  const books = (state.data && state.data.books) || {};
+  return BOOKS.reduce((total, book) => {
+    const words = ((books[book.id] || {}).words) || [];
+    return total + words.filter(word => isDue(word)).length;
+  }, 0);
 }
 
 function createLocalApi() {
@@ -1408,7 +1426,17 @@ function clearWritingShowTimer() {
   }
 }
 
+let overlayReturnFocus = null;
+let toastTimer = null;
+
+function setPageInert(inert) {
+  [document.querySelector('.desk'), ui.mobileNav, document.getElementById('btn-menu')].forEach((element) => {
+    if (element) element.inert = Boolean(inert);
+  });
+}
+
 function closeOverlay() {
+  const wasOpen = ui.overlay.classList.contains('open');
   const pending = flushOpenNotebook();
   if (notebookSaveTimer) {
     clearTimeout(notebookSaveTimer);
@@ -1423,17 +1451,54 @@ function closeOverlay() {
   ui.overlay.hidden = true;
   ui.overlay.setAttribute('hidden', '');
   ui.overlay.innerHTML = '';
+  document.body.classList.remove('modal-open');
+  setPageInert(false);
   pending.catch(() => {});
+  if (wasOpen && overlayReturnFocus && overlayReturnFocus.isConnected) {
+    const target = overlayReturnFocus;
+    requestAnimationFrame(() => target.focus({ preventScroll: true }));
+  }
+  overlayReturnFocus = null;
 }
 
 function openOverlay(html) {
+  const wasOpen = ui.overlay.classList.contains('open');
+  if (!wasOpen) overlayReturnFocus = document.activeElement;
   flushOpenNotebook();
   ui.overlay.innerHTML = html;
   ui.overlay.hidden = false;
   ui.overlay.removeAttribute('hidden');
   ui.overlay.classList.add('open');
-  const close = ui.overlay.querySelector('[data-close]');
-  if (close) close.addEventListener('click', closeOverlay);
+  document.body.classList.add('modal-open');
+  setPageInert(true);
+  const modal = ui.overlay.querySelector('.modal');
+  if (modal) {
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.tabIndex = -1;
+    const heading = modal.querySelector('h2');
+    if (heading) {
+      heading.id = 'wordnest-dialog-title';
+      modal.setAttribute('aria-labelledby', heading.id);
+    }
+    requestAnimationFrame(() => {
+      if (ui.overlay.classList.contains('open') && !modal.contains(document.activeElement)) {
+        modal.focus({ preventScroll: true });
+      }
+    });
+  }
+}
+
+function showToast(message) {
+  if (!ui.toast || !message) return;
+  clearTimeout(toastTimer);
+  ui.toast.textContent = message;
+  ui.toast.hidden = false;
+  requestAnimationFrame(() => ui.toast.classList.add('show'));
+  toastTimer = setTimeout(() => {
+    ui.toast.classList.remove('show');
+    setTimeout(() => { ui.toast.hidden = true; }, 180);
+  }, 2400);
 }
 
 function currentWords() {
@@ -1458,6 +1523,20 @@ function filteredWords() {
   });
   words.sort((a, b) => Number(isDue(b)) - Number(isDue(a)) || Date.parse(b.createdAt) - Date.parse(a.createdAt));
   return words;
+}
+
+function reviewTimeLabel(word) {
+  if (word && word.review && word.review.mastered) return '阶段学习已完成';
+  if (isDue(word)) return '现在适合复习';
+  const dueAt = Date.parse(word && word.review && word.review.dueAt);
+  if (!Number.isFinite(dueAt)) return '等待安排复习';
+  const minutes = Math.max(1, Math.ceil((dueAt - Date.now()) / 60000));
+  if (minutes < 60) return `${minutes} 分钟后复习`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `${hours} 小时后复习`;
+  const days = Math.ceil(hours / 24);
+  if (days < 7) return `${days} 天后复习`;
+  return `${new Date(dueAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}复习`;
 }
 
 function pad2(value) {
@@ -1607,40 +1686,98 @@ function openExamForm() {
 
 function renderNav() {
   const books = (state.data && state.data.books) || emptyRendererState().books;
-  ui.nav.innerHTML = BOOKS.map((book) => {
+  const bookButton = (book) => {
     const due = dueInBook(book.id);
     const count = (((books[book.id] || {}).words) || []).length;
-    return `<button type="button" class="book-btn ${book.id === state.bookId ? 'active' : ''}" data-book="${book.id}">
-      <span><b>${book.name}</b><small>${count} 词</small></span>
-      <span class="badge ${due ? '' : 'empty'}">${due || count}</span>
+    const current = book.id === state.bookId;
+    return `<button type="button" class="book-btn ${current ? 'active' : ''}" data-book="${book.id}" ${current ? 'aria-current="page"' : ''} aria-label="${book.name}单词本，${count} 个词${due ? `，${due} 个待复习` : ''}">
+      <span class="book-icon">${BOOK_ICONS[book.id]}</span>
+      <span class="book-copy"><b>${book.name}</b><small>${count} 个词</small></span>
+      <span class="badge ${due ? '' : 'empty'}" title="${due ? `${due} 个待复习` : '暂无待复习'}">${due || (count ? '✓' : '—')}</span>
     </button>`;
-  }).join('');
+  };
+  ui.nav.innerHTML = BOOKS.map(bookButton).join('');
+
+  if (ui.mobileNav) {
+    const mobileBookButton = (book) => {
+      const due = dueInBook(book.id);
+      const current = book.id === state.bookId;
+      return `<button type="button" class="mobile-book ${current ? 'active' : ''}" data-book="${book.id}" ${current ? 'aria-current="page"' : ''}>
+        <span class="mobile-book-icon">${BOOK_ICONS[book.id]}</span>
+        <span>${book.name}</span>
+        ${due ? `<b class="mobile-due" aria-label="${due} 个待复习">${due > 99 ? '99+' : due}</b>` : ''}
+      </button>`;
+    };
+    ui.mobileNav.innerHTML = [
+      mobileBookButton(BOOKS[0]),
+      mobileBookButton(BOOKS[1]),
+      `<button type="button" class="mobile-add" data-mobile-action="add" aria-label="新增单词">
+        <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <small>新增</small>
+      </button>`,
+      mobileBookButton(BOOKS[2]),
+      mobileBookButton(BOOKS[3]),
+    ].join('');
+  }
+
+  if (ui.reviewDue) {
+    const due = totalDueCount();
+    ui.reviewDue.classList.toggle('is-complete', !due);
+    ui.reviewDue.innerHTML = due
+      ? `<span>开始今日复习</span><b>${due}</b>`
+      : '<span>今日已完成</span><small>暂无到期</small>';
+  }
 }
 
 function renderList() {
   const meta = bookMeta(state.bookId);
   const words = filteredWords();
   const all = currentWords();
+  const due = dueInBook(state.bookId);
+  const mastered = all.filter(word => word.review && word.review.mastered).length;
+  const masteredPercent = all.length ? Math.round((mastered / all.length) * 100) : 0;
+  document.body.dataset.book = meta.id;
   ui.title.textContent = meta.name;
   ui.en.textContent = meta.en;
   ui.hint.textContent = meta.hint;
+  ui.list.dataset.book = meta.id;
+  ui.list.setAttribute('aria-label', `${meta.name}单词列表，共 ${words.length} 个结果`);
   if (ui.speakAll) ui.speakAll.hidden = !meta.speak;
   if (ui.dictation) ui.dictation.hidden = meta.id !== 'listening';
   const notebookBtn = document.getElementById('btn-notebook');
   if (notebookBtn) notebookBtn.classList.toggle('has-notes', Boolean(currentNotebook().trim()));
+  const mobileReviewLabel = document.querySelector('[data-mobile-action="review"] span');
+  if (mobileReviewLabel) mobileReviewLabel.textContent = due ? `复习本册 · ${due}` : '复习本册';
   ui.stats.innerHTML = `
-    <div class="stat"><b>${all.length}</b><span>本册单词</span></div>
-    <div class="stat"><b>${dueInBook(state.bookId)}</b><span>待复习</span></div>
+    <div class="stat"><span>本册收录</span><b>${all.length}</b></div>
+    <div class="stat ${due ? 'has-due' : ''}"><span>待复习</span><b>${due}</b></div>
+    <div class="stat stat-mastered" style="--mastered:${masteredPercent}%"><span>已掌握</span><b>${masteredPercent}%</b></div>
   `;
   if (!all.length) {
     ui.list.innerHTML = `<article class="empty-card">
-      <h2>这一册还是空白</h2>
-      <p>打字加入，或把标了重点的页面拍下来扫描。进入单词本后，每隔 1–2 小时会提醒你复习。</p>
+      <div class="empty-visual" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><path d="M13 14.5h16a7 7 0 0 1 7 7V52H20a7 7 0 0 0-7 4V14.5Z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M51 14.5H35a7 7 0 0 0-7 7V52h16a7 7 0 0 1 7 4V14.5Z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="m43 8 1.5 3.5L48 13l-3.5 1.5L43 18l-1.5-3.5L38 13l3.5-1.5L43 8Z" fill="currentColor"/></svg>
+      </div>
+      <span class="empty-kicker">${meta.name}单词本</span>
+      <h2>从第一个词开始积累</h2>
+      <p>随手记下今天遇到的词，词栖会按记忆节奏安排复习，让积累慢慢变成掌握。</p>
+      <div class="empty-actions">
+        <button type="button" class="primary" data-empty-action="add">新增一个词</button>
+        <button type="button" class="secondary" data-empty-action="batch">批量粘贴</button>
+      </div>
+      <small class="empty-tip">电脑端也可以按 Ctrl/⌘ + N 快速新增</small>
     </article>`;
     return;
   }
   if (!words.length) {
-    ui.list.innerHTML = `<article class="empty-card"><h2>没有匹配的单词</h2><p>试试别的检索词。</p></article>`;
+    ui.list.innerHTML = `<article class="empty-card compact">
+      <div class="empty-visual search-empty" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><circle cx="28" cy="28" r="15" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="m39 39 12 12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+      </div>
+      <h2>没有找到匹配的单词</h2>
+      <p>可以换个关键词，或清除搜索与来源筛选。</p>
+      <div class="empty-actions"><button type="button" class="secondary" data-empty-action="clear">清除筛选</button></div>
+    </article>`;
     return;
   }
   ui.list.innerHTML = words.map((word) => `
@@ -1651,7 +1788,9 @@ function renderList() {
         ${meaningHtml(word)}
         ${tagHtml(word)}
         ${examplePickerHtml(word)}
-        <p class="meta">${isDue(word) ? '现在可复习' : '下次 ' + new Date(word.review.dueAt).toLocaleString()}</p>
+        <p class="meta review-meta ${isDue(word) ? 'due' : (word.review && word.review.mastered ? 'mastered' : '')}">
+          <span class="status-dot" aria-hidden="true"></span>${escapeHtml(reviewTimeLabel(word))}
+        </p>
       </div>
       <div class="row-actions">
         <button type="button" class="icon-btn ghost" data-act="speak" aria-label="发音" title="发音"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 5V4L9 9H5z" fill="currentColor"/><path d="M16.5 8.5a4.5 4.5 0 010 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
@@ -1669,6 +1808,7 @@ function renderList() {
       if (!window.confirm(`从「${meta.name}」中删除 ${word.text}？`)) return;
       await api.deleteWord(state.bookId, word.id);
       await reload();
+      showToast(`已从${meta.name}册删除 ${word.text}`);
     });
   });
 }
@@ -1685,13 +1825,87 @@ function render() {
   }
 }
 
-async function reload() {
-  state.data = await api.getState();
-  if (ui.exam) {
-    ui.exam.dataset.mode = '';
-    ui.exam.dataset.at = '';
+function openMobileTools() {
+  const meta = bookMeta(state.bookId);
+  const tools = [
+    {
+      id: 'manage',
+      label: '批量整理',
+      hint: '标签与删除',
+      icon: '<path d="M7 6h13M7 12h13M7 18h13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m3.5 6 .8.8L6 5M3.5 12l.8.8L6 11M3.5 18l.8.8L6 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+    },
+    {
+      id: 'notebook',
+      label: '本册笔记',
+      hint: '记录素材',
+      icon: '<path d="M6 3.5h11a2 2 0 0 1 2 2v15H8a3 3 0 0 1-3-3v-13a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 17.5a3 3 0 0 1 3-3h11M9 8h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    },
+    {
+      id: 'export',
+      label: '导出单词',
+      hint: '复制或下载',
+      icon: '<path d="M12 3v12m0 0-4-4m4 4 4-4M5 15v5h14v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+    },
+  ];
+  if (api.desktop) {
+    tools.unshift({
+      id: 'scan',
+      label: '图片识词',
+      hint: '扫描重点词',
+      icon: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M8 9h8M8 13h8M8 17h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    });
   }
-  render();
+  if (meta.id === 'listening') {
+    tools.unshift({
+      id: 'dictation',
+      label: '听写练习',
+      hint: '听音后拼写',
+      icon: '<path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 11.5v.5a5.5 5.5 0 0 0 11 0v-.5M12 17.5V21M9.5 21h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    });
+  }
+  if (meta.speak) {
+    tools.unshift({
+      id: 'speak',
+      label: '顺序朗读',
+      hint: '整册播放',
+      icon: '<path d="M5 9v6h4l5 4V5L9 9H5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M17 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    });
+  }
+  tools.push({
+    id: 'settings',
+    label: '设置与备份',
+    hint: '同步与偏好',
+    icon: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.5 1A7 7 0 0 0 14.3 5L14 2.5h-4L9.7 5a7 7 0 0 0-2.1 1.8l-2.5-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.5-1A7 7 0 0 0 9.7 19l.3 2.5h4l.3-2.5a7 7 0 0 0 2.1-1.8l2.5 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  });
+  openOverlay(`
+    <div class="modal mobile-tools-modal">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <span class="empty-kicker">${meta.name}单词本</span>
+      <h2>更多工具</h2>
+      <p class="help">选择接下来要做的事。</p>
+      <div class="mobile-tool-grid">
+        ${tools.map(tool => `<button type="button" data-mobile-tool="${tool.id}">
+          <span class="mobile-tool-icon"><svg viewBox="0 0 24 24" aria-hidden="true">${tool.icon}</svg></span>
+          <span><b>${tool.label}</b><small>${tool.hint}</small></span>
+        </button>`).join('')}
+      </div>
+      <div class="modal-actions"><button type="button" class="ghost" data-close>取消</button></div>
+    </div>
+  `);
+}
+
+async function reload() {
+  ui.list.setAttribute('aria-busy', 'true');
+  try {
+    state.data = await api.getState();
+    if (ui.exam) {
+      ui.exam.dataset.mode = '';
+      ui.exam.dataset.at = '';
+    }
+    render();
+  } finally {
+    ui.list.setAttribute('aria-busy', 'false');
+  }
 }
 
 function extractEnglishItems(raw) {
@@ -1890,6 +2104,7 @@ function openWordForm(existing, startMode) {
       else await api.addWords(state.bookId, [payload]);
       closeOverlay();
       await reload();
+      showToast(existing ? `已保存 ${payload.text}` : `已加入 ${payload.text}`);
     });
     $('#f-text').focus();
   }
@@ -3342,7 +3557,10 @@ function setMenuOpen(open) {
   document.body.classList.toggle('menu-open', open);
   const btn = document.getElementById('btn-menu');
   const backdrop = document.getElementById('menu-backdrop');
-  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (btn) {
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? '关闭菜单' : '打开菜单');
+  }
   if (backdrop) {
     backdrop.hidden = !open;
     if (open) backdrop.removeAttribute('hidden');
@@ -3353,15 +3571,52 @@ function setMenuOpen(open) {
 function bindChrome() {
   document.addEventListener('click', (event) => {
     const bookBtn = event.target.closest('[data-book]');
-    if (bookBtn && ui.nav.contains(bookBtn)) {
+    if (bookBtn && (ui.nav.contains(bookBtn) || (ui.mobileNav && ui.mobileNav.contains(bookBtn)))) {
       state.bookId = bookBtn.dataset.book;
       setMenuOpen(false);
       render();
+      const stage = document.querySelector('.stage');
+      if (stage) stage.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       return;
     }
     const closeBtn = event.target.closest('[data-close]');
     if (closeBtn) {
       closeOverlay();
+      return;
+    }
+    const mobileAction = event.target.closest('[data-mobile-action]');
+    if (mobileAction) {
+      const action = mobileAction.dataset.mobileAction;
+      if (action === 'add') openWordForm();
+      else if (action === 'review') openReview(true);
+      else if (action === 'batch') openWordForm(null, 'batch');
+      else if (action === 'more') openMobileTools();
+      return;
+    }
+    const emptyAction = event.target.closest('[data-empty-action]');
+    if (emptyAction) {
+      const action = emptyAction.dataset.emptyAction;
+      if (action === 'add') openWordForm();
+      else if (action === 'batch') openWordForm(null, 'batch');
+      else if (action === 'clear') {
+        state.query = '';
+        state.tagFilter = '';
+        ui.search.value = '';
+        render();
+        ui.search.focus();
+      }
+      return;
+    }
+    const mobileTool = event.target.closest('[data-mobile-tool]');
+    if (mobileTool) {
+      const tool = mobileTool.dataset.mobileTool;
+      if (tool === 'scan') openScan();
+      else if (tool === 'manage') openBatchManage();
+      else if (tool === 'export') openExport();
+      else if (tool === 'notebook') openNotebook();
+      else if (tool === 'dictation') openDictation();
+      else if (tool === 'speak') openPlayer();
+      else if (tool === 'settings') openSettings();
       return;
     }
     const button = event.target.closest('button');
@@ -3401,9 +3656,32 @@ function bindChrome() {
     if (scanPasteHandler) scanPasteHandler(event);
   });
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab' && ui.overlay.classList.contains('open')) {
+      const focusable = [...ui.overlay.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [contenteditable="true"], [href], [tabindex]:not([tabindex="-1"])')]
+        .filter(el => !el.hidden && el.getClientRects().length);
+      if (focusable.length) {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!ui.overlay.contains(document.activeElement)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (event.shiftKey && (document.activeElement === first || document.activeElement.classList.contains('modal'))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }
     if (event.key === 'Escape') {
       closeOverlay();
       setMenuOpen(false);
+    }
+    const typing = event.target && event.target.matches && event.target.matches('input, textarea, select, [contenteditable="true"]');
+    if (!typing && !ui.overlay.classList.contains('open') && (event.key === '/' || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'))) {
+      event.preventDefault();
+      ui.search.focus();
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
       event.preventDefault();
@@ -3424,6 +3702,8 @@ function bindChrome() {
   if (!api.desktop && ui.dataHint) {
     ui.dataHint.textContent = 'Gist 和 Token 在设置里填一次。之后电脑点「上传云端」，手机点「下载云端」。';
   }
+  const scanButton = document.getElementById('btn-scan');
+  if (!api.desktop && scanButton) scanButton.hidden = true;
   if (api.onStartReview) api.onStartReview(() => openReview(false));
   if (window.speechSynthesis && window.speechSynthesis.getVoices) window.speechSynthesis.getVoices();
 }
