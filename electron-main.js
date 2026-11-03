@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const fs = require('node:fs');
+const ofs = require('original-fs');
 const https = require('node:https');
 const { execFile, spawn } = require('node:child_process');
 const {
@@ -348,11 +349,16 @@ async function applyReleaseUpdate() {
     throw new Error('请先把词栖拖进「应用程序」文件夹，再点更新。');
   }
   const tempRoot = path.join(app.getPath('temp'), 'wordnest-update');
-  fs.rmSync(tempRoot, { recursive: true, force: true });
-  fs.mkdirSync(tempRoot, { recursive: true });
+  await new Promise((resolve, reject) => {
+    execFile('rm', ['-rf', tempRoot], { timeout: 60000 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(String(stderr || err.message || '清理更新目录失败').trim()));
+      else resolve();
+    });
+  });
+  ofs.mkdirSync(tempRoot, { recursive: true });
   const zipPath = path.join(tempRoot, 'update.zip');
   const extractDir = path.join(tempRoot, 'unpacked');
-  fs.mkdirSync(extractDir, { recursive: true });
+  ofs.mkdirSync(extractDir, { recursive: true });
   await downloadFile(pendingUpdate.url, zipPath);
   await new Promise((resolve, reject) => {
     execFile('ditto', ['-x', '-k', zipPath, extractDir], { timeout: 180000 }, (err, stdout, stderr) => {
@@ -360,7 +366,7 @@ async function applyReleaseUpdate() {
       else resolve();
     });
   });
-  const appName = fs.readdirSync(extractDir).find((name) => name.endsWith('.app'));
+  const appName = ofs.readdirSync(extractDir).find((name) => name.endsWith('.app'));
   if (!appName) throw new Error('更新包里没有应用。');
   const scriptPath = path.join(tempRoot, 'apply.sh');
   fs.writeFileSync(scriptPath, `#!/bin/bash
