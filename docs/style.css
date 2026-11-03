@@ -1176,8 +1176,7 @@ a:focus-visible {
 }
 .sidebar-main {
   gap: 18px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,.2) transparent;
+  scrollbar-width: none;
 }
 .brand { gap: 11px; padding: 0 7px; }
 .brand-mark {
@@ -1311,7 +1310,26 @@ a:focus-visible {
 
 .stage {
   padding: 24px 30px 48px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 246, 232, .06) 180px, transparent);
+  background: transparent;
+  scrollbar-width: none;
+}
+.stage::-webkit-scrollbar,
+.sidebar-main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.sidebar-main { scrollbar-width: none; }
+body.desktop .sidebar { padding-top: 48px; }
+body.desktop .stage { padding-top: 36px; }
+body.desktop .window-drag {
+  position: fixed;
+  top: 0;
+  left: 88px;
+  right: 0;
+  z-index: 40;
+  height: 28px;
+  -webkit-app-region: drag;
 }
 .stage-inner {
   width: min(1180px, 100%);

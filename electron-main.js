@@ -65,7 +65,7 @@ function applyDockIcon() {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const windowOptions = {
     width: 1280,
     height: 840,
     minWidth: 420,
@@ -80,7 +80,12 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
-  });
+  };
+  if (process.platform === 'darwin') {
+    windowOptions.titleBarStyle = 'hiddenInset';
+    windowOptions.trafficLightPosition = { x: 18, y: 16 };
+  }
+  mainWindow = new BrowserWindow(windowOptions);
 
   mainWindow.on('minimize', (event) => {
     if (process.platform === 'darwin') {

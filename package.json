@@ -1,7 +1,7 @@
 {
   "name": "wordnest",
   "productName": "词栖",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "macOS 四册单词本：阅读 / 听力 / 写作 / 口语，带复习提醒与发音播放",
   "author": "zym",
