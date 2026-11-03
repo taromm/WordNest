@@ -3105,20 +3105,19 @@ function openDictation() {
       <div class="modal">
         <div class="review-card">
           <p class="progress">听力 · ${sourceNote}${title} · ${index + 1} / ${queue.length}</p>
-          <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看答案，再判断')}</p>
+          <p class="dictation-result ${correct ? 'ok' : 'bad'}">${correct ? '拼写正确' : (typed ? '拼写不匹配' : '先看这个词')}</p>
           ${typed && !correct ? `<p class="dictation-typed">你写的是 ${escapeHtml(typed)}</p>` : ''}
           <div class="listen-line">${sidePrevButton('dt-prev', index === 0)}<div class="review-word">${escapeHtml(item.word.text)}</div>${playButton('dt-speak', '发音')}</div>
           <div class="phonetic">${escapeHtml(item.word.phonetic)}</div>
           ${meaningHtml(item.word)}
           ${tagHtml(item.word)}
           ${examplePickerHtml(item.word)}
+          <p class="help">按回车到${last ? '结束' : '下一词'}</p>
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="ghost" data-close>结束</button>
           </div>
-          <div class="review-dock review-rates">
-            <button type="button" class="danger" id="rv-again">不认识</button>
-            <button type="button" class="secondary" id="rv-hard">模糊</button>
-            <button type="button" class="primary" id="rv-good">认识</button>
+          <div class="review-dock word-nav">
+            <button type="button" class="primary" id="dt-next">${last ? '完成' : '下一词 ＞'}</button>
           </div>
         </div>
       </div>
@@ -3146,9 +3145,27 @@ function openDictation() {
       correct = false;
       paint();
     };
-    ui.overlay.querySelector('#rv-again').addEventListener('click', () => rate('again'));
-    ui.overlay.querySelector('#rv-hard').addEventListener('click', () => rate('hard'));
-    ui.overlay.querySelector('#rv-good').addEventListener('click', () => rate('good'));
+    let leaving = false;
+    const advance = () => {
+      if (leaving) return;
+      leaving = true;
+      rate(correct ? 'good' : 'again');
+    };
+    ui.overlay.querySelector('#dt-next').addEventListener('click', advance);
+    const onKey = (event) => {
+      if (phase !== 'show' || !ui.overlay.classList.contains('open')) {
+        document.removeEventListener('keydown', onKey);
+        return;
+      }
+      if (event.key !== 'Enter' || event.repeat) return;
+      const target = event.target;
+      const typing = target && target.matches && target.matches('input, textarea, select, [contenteditable="true"]');
+      if (typing) return;
+      if (target && target.closest && target.closest('button') && target.id !== 'dt-next') return;
+      event.preventDefault();
+      advance();
+    };
+    document.addEventListener('keydown', onKey);
   }
   paint();
 }
