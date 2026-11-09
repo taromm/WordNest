@@ -20,9 +20,6 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-html, body, .desk, .stage, .sidebar {
-  -webkit-app-region: no-drag;
-}
 html { background-color: #f4b8c5; }
 body {
   font-family: var(--sans);
@@ -1325,11 +1322,12 @@ body.desktop .stage { padding-top: 36px; }
 body.desktop .window-drag {
   position: fixed;
   top: 0;
-  left: 88px;
+  left: 86px;
   right: 0;
   z-index: 40;
-  height: 28px;
+  height: 32px;
   -webkit-app-region: drag;
+  -webkit-user-select: none;
 }
 .stage-inner {
   width: min(1180px, 100%);
