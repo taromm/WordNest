@@ -3050,6 +3050,7 @@ function openDictation() {
   let phase = 'ask';
   let typed = '';
   let correct = false;
+  let missed = false;
 
   function paint() {
     const item = queue[index];
@@ -3078,6 +3079,10 @@ function openDictation() {
       const reveal = (value) => {
         typed = String(value || '').trim();
         correct = Boolean(typed) && normalizeDictation(typed) === normalizeDictation(item.word.text);
+        if (!correct && !missed) {
+          missed = true;
+          api.reviewWord(item.bookId, item.word.id, 'again').then(() => reload()).catch(() => {});
+        }
         phase = 'show';
         paint();
       };
@@ -3088,6 +3093,7 @@ function openDictation() {
         phase = 'ask';
         typed = '';
         correct = false;
+        missed = false;
         paint();
       });
       ui.overlay.querySelector('#dt-submit').addEventListener('click', () => reveal(input.value));
@@ -3112,12 +3118,12 @@ function openDictation() {
           ${meaningHtml(item.word)}
           ${tagHtml(item.word)}
           ${examplePickerHtml(item.word)}
-          <p class="help">按回车到${last ? '结束' : '下一词'}</p>
+          <p class="help">${correct ? `按回车到${last ? '结束' : '下一词'}` : '拼错了，按回车再拼一次'}</p>
           <div class="modal-actions" style="justify-content:center">
             <button type="button" class="ghost" data-close>结束</button>
           </div>
           <div class="review-dock word-nav">
-            <button type="button" class="primary" id="dt-next">${last ? '完成' : '下一词 ＞'}</button>
+            <button type="button" class="primary" id="dt-next">${correct ? (last ? '完成' : '下一词 ＞') : '再拼一次'}</button>
           </div>
         </div>
       </div>
@@ -3130,11 +3136,14 @@ function openDictation() {
       phase = 'ask';
       typed = '';
       correct = false;
+      missed = false;
       paint();
     });
     const rate = async (rating) => {
-      await api.reviewWord(item.bookId, item.word.id, rating);
-      await reload();
+      if (rating) {
+        await api.reviewWord(item.bookId, item.word.id, rating);
+        await reload();
+      }
       if (last) {
         openOverlay(`<div class="modal"><h2>听写完成</h2><p class="help">已记住进度。可以随时再打开听力册继续听写。</p><div class="modal-actions"><button class="primary" data-close>好</button></div></div>`);
         return;
@@ -3143,13 +3152,21 @@ function openDictation() {
       phase = 'ask';
       typed = '';
       correct = false;
+      missed = false;
       paint();
     };
     let leaving = false;
     const advance = () => {
       if (leaving) return;
       leaving = true;
-      rate(correct ? 'good' : 'again');
+      if (!correct) {
+        phase = 'ask';
+        typed = '';
+        correct = false;
+        paint();
+        return;
+      }
+      rate(missed ? '' : 'good');
     };
     ui.overlay.querySelector('#dt-next').addEventListener('click', advance);
     const onKey = (event) => {
